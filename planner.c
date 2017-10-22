@@ -5,6 +5,8 @@
  *=================================================================*/
 #include <math.h>
 #include "mex.h"
+#include <limits>
+#include <vector>
 
 /* Input Arguments */
 #define MAP_IN      prhs[0]
@@ -201,12 +203,6 @@ int IsValidArmConfiguration(double* angles, int numofDOFs, double* map, int x_si
     }    
 }
 
-struct Point
-{
-    double x;
-    double y;
-};
-
 class Node
 {
 public:
@@ -227,11 +223,6 @@ public:
         parent_idx_ = parent_idx;
     }
 
-    // float get_dist(double* config_1, double* config_2)
-    // {
-    //     for (int idx=0; idx<; idx++) 
-    // }
-
     double get_dist_to_config(Config config_2)
     {
         double total_dist = 0.0;
@@ -244,11 +235,15 @@ public:
         return total_dist;
     }
 
-    bool is_goal(const Config &goal_config)
+    bool is_in_goal_region(const Config &goal_config)
     {
-        for (int joint_idx=0; joint_idx<numofDOFs, joint_idx++)
+        if (get_dist_to_config(goal_config) < goal_thresh_)
         {
-            if 
+            return true;
+        }
+        else
+        {
+            return false;
         }
     }
 
@@ -258,7 +253,7 @@ public:
         return parent_idx_;
     }
 
-    int get_config()
+    Config get_config()
     {
         return config_;
     }
@@ -270,17 +265,137 @@ private:
     Config config_;// joint angles
     int parent_idx_;
     static int const numofDOFs;// = 4; initialize outside 
+    static double goal_thresh_;
 };
 
 
 class Tree
 {
 public:
-    Tree(const Config &start_config, const Config &goal_config);
+    Tree(const Config &start_config, const Config &goal_config)
+    {
+        start_config_ = start_config;
+        goal_config_ = goal_config;
+        num_samples_ = 0;
+        is_goal_reached_ = false;
+        insert_node(start_config);
+        numofDOFs_ = goal_config.size();// maybe dont need this
+    }
     ~Tree();
-    
+
+    int get_nearest_index(const Config &config)
+    {
+        int idx_min = -1;
+        double min_dist = -std::numeric_limits<double>::infinity()
+        for (int node_idx=0; node_idx<nodes.size(); node_idx++)
+        {
+            if (nodes_[node_idx].get_dist_to_config(config) < min_dist)
+            {
+                min_dist = nodes_[node_idx].get_dist_to_config(config);
+                idx_min = node_idx;
+            }
+        }
+        return node_idx;
+    }
+
+    void insert_node(const Config &new_config)
+    {
+        if (nodes_.size()==0)
+        {
+            nodes_.push_back(new_config);
+            return;
+        }
+
+        int idx_nearest = get_nearest_index(new_config);
+
+        // if new_config is not in collision
+        if (IsValidArmConfiguration(new_config, numofDOFs_, map_, map_x_size_, map_y_size_))
+        {
+            // move by epsilon
+            for (int joint_idx=0; joint_idx<numofDOFs_;joint_idx++)
+            {
+                new_config[joint_idx] = nodes_[idx_nearest].get_config[joint_idx] 
+                            + epsilon_*(new_config[joint_idx] - nodes_[idx_nearest].get_config[joint_idx]);
+            }
+
+            Node new_node(new_config, idx_nearest);
+            nodes_.push_back(new_node);
+
+            if new_node.is_in_goal_region()
+            {
+                is_goal_reached_ = true;
+                construct_path();
+            }
+            return;
+        }
+
+        else
+        {
+            return;
+        }
+
+    }
+
+    void construct_path()
+    {
+        path_.clear();
+        int idx_waypt = nodes_.size()-1;
+        while (idx_waypt!=-1)
+        {
+            path_.push_back(nodes_[idx_waypt].get_config);
+            idx_waypt = nodes_[idx_waypt].get_parent_idx();
+        }
+    }
+
+    Config get_random_sample()
+    {
+        num_samples_++;
+
+        if ((double) rand()/(double) RAND_MAX < sample_goal_bias_)
+        {
+            return goal_config_;
+        }
+        else
+        {
+            Config sample_config;
+
+            for(int i = 0; i < numofDOFs_; ++i) 
+            {
+                sample_config[i] = (double)rand()*(2*M_PI)/(double) RAND_MAX;
+            }
+
+            return sample_config;
+        }
+
+    } 
+
+    bool is_goal_reached_()
+    {
+        return is_goal_reached_;
+    }
+
+    std::vector<Config> get_path()
+    {
+        return path_;
+    }
+
+    // bool is_reachable(const Config &config)
+    // {
+    //     if (nodes_[get_nearest_index(config)])
+    // }
+
     Config start_config_;
     Config goal_config_;
+    std::vector<Node> nodes_;
+    std::vector<Config> path_;
+    int num_samples_;
+    bool is_goal_reached_;
+    int numofDOFs_;
+    double* map_;
+    int map_x_size_;
+    int map_y_size_;
+    double sample_goal_bias_;
+    double epsilon_;
 };
 
 static void planner(
