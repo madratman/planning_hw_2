@@ -37,6 +37,9 @@
 //the length of each link in the arm (should be the same as the one used in runtest.m)
 #define LINKLENGTH_CELLS 10
 
+// typedef for planar arm config - numofDOFs joint angles
+typedef double* Config;
+
 typedef struct {
     int X1, Y1;
     int X2, Y2;
@@ -48,7 +51,6 @@ typedef struct {
     int XIndex, YIndex;
     int Flipped;
 } bresenham_param_t;
-
 
 void ContXY2Cell(double x, double y, short unsigned int* pX, short unsigned int *pY, int x_size, int y_size)
 {
@@ -62,7 +64,6 @@ void ContXY2Cell(double x, double y, short unsigned int* pX, short unsigned int 
     if( y < 0) *pY = 0;
     if( *pY >= y_size) *pY = y_size-1;
 }
-
 
 void get_bresenham_parameters(int p1x, int p1y, int p2x, int p2y, bresenham_param_t *params)
 {
@@ -146,9 +147,7 @@ int get_next_point(bresenham_param_t *params)
     return 1;
 }
 
-int IsValidLineSegment(double x0, double y0, double x1, double y1, double*  map,
-             int x_size,
-             int y_size)
+int IsValidLineSegment(double x0, double y0, double x1, double y1, double* map, int x_size, int y_size)
 
 {
     bresenham_param_t params;
@@ -180,8 +179,7 @@ int IsValidLineSegment(double x0, double y0, double x1, double y1, double*  map,
     return 1;
 }
 
-int IsValidArmConfiguration(double* angles, int numofDOFs, double* map,
-    int x_size, int y_size)
+int IsValidArmConfiguration(double* angles, int numofDOFs, double* map, int x_size, int y_size)
 {
     double x0,y0,x1,y1;
     int i;
@@ -203,8 +201,90 @@ int IsValidArmConfiguration(double* angles, int numofDOFs, double* map,
     }    
 }
 
+struct Point
+{
+    double x;
+    double y;
+};
+
+class Node
+{
+public:
+    Node(const Config config)
+    {
+        config_ = config;
+        parent_idx_ = -1;
+    }
+
+    Node(const Config config, int parent_idx)
+    {
+        config_ = config;
+        parent_idx_ = parent_idx;
+    }
+
+    void set_parent_idx(int parent_idx)
+    {
+        parent_idx_ = parent_idx;
+    }
+
+    // float get_dist(double* config_1, double* config_2)
+    // {
+    //     for (int idx=0; idx<; idx++) 
+    // }
+
+    double get_dist_to_config(Config config_2)
+    {
+        double total_dist = 0.0;
+        for (int joint_idx=0; joint_idx<numofDOFs; joint_idx++)
+        {
+            total_dist = total_dist + 
+                        std::abs(std::min(config_[joint_idx] - config_2[joint_idx],
+                                2*M_PI-(config_[joint_idx] - config_2[joint_idx])));
+        }
+        return total_dist;
+    }
+
+    bool is_goal(const Config &goal_config)
+    {
+        for (int joint_idx=0; joint_idx<numofDOFs, joint_idx++)
+        {
+            if 
+        }
+    }
+
+    // getters:
+    int get_parent_idx()
+    {
+        return parent_idx_;
+    }
+
+    int get_config()
+    {
+        return config_;
+    }
+
+    ~Node();
+
+private:
+    // double* config_;// joint angles
+    Config config_;// joint angles
+    int parent_idx_;
+    static int const numofDOFs;// = 4; initialize outside 
+};
+
+
+class Tree
+{
+public:
+    Tree(const Config &start_config, const Config &goal_config);
+    ~Tree();
+    
+    Config start_config_;
+    Config goal_config_;
+};
+
 static void planner(
-    double*    map,
+    double* map,
     int x_size,
     int y_size,
     double* armstart_anglesV_rad,
