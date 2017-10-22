@@ -284,7 +284,7 @@ public:
     Tree(Config start_config, 
             Config goal_config,
             int num_max_iters,
-            int epsilon,
+            double epsilon,
             int numofDOFs,
             double sample_goal_bias)
     {
@@ -344,8 +344,13 @@ public:
             // move by epsilon
             for (int joint_idx=0; joint_idx<numofDOFs_;joint_idx++)
             {
-                new_config[joint_idx] = nodes_[idx_nearest].get_config()[joint_idx] 
-                            + epsilon_*(new_config[joint_idx] - nodes_[idx_nearest].get_config()[joint_idx]);
+                // std::cout << " nearest " << nodes_[idx_nearest].get_config()[joint_idx];
+                // std::cout << " sample " << new_config[joint_idx];
+                // double nearest = nodes_[idx_nearest].get_config()[joint_idx];
+                // double sample = new_config[joint_idx];
+                new_config[joint_idx] = nodes_[idx_nearest].get_config()[joint_idx] +
+                            (epsilon_*( new_config[joint_idx] - nodes_[idx_nearest].get_config()[joint_idx] ));// TODO weird bug with non hardcoded epsilon
+                // std::cout << " to be added " << new_config[joint_idx] << std::endl;;
             }
 
             Node new_node(new_config, idx_nearest);
@@ -471,9 +476,9 @@ static void planner(
     //no plan by default
     *plan = NULL;
     *planlength = 0;
-    int epsilon = 1.0;
-    int num_max_iters = (int)1e7;
-    double sample_goal_bias = 0.5;
+    double epsilon = 0.1;
+    int num_max_iters = (int)1e2;
+    double sample_goal_bias = 0.3;
     // static
     Node temp(armstart_anglesV_rad);
     temp.set_numofDOFs(numofDOFs);
