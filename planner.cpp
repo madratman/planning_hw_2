@@ -301,6 +301,7 @@ public:
         map_ = map;
         map_x_size_ = x_size;
         map_y_size_ = y_size;
+        goal_cartesian_ = new double[numofDOFs_];
         forward_kinematics(goal_config_, goal_cartesian_);
         insert_node(start_config);
     }
@@ -353,7 +354,7 @@ public:
 
     bool is_in_goal_region_cartesian_space(Node& node)
     {
-        double* node_cartesian;
+        double* node_cartesian = new double[numofDOFs_];
         forward_kinematics(node.config_, node_cartesian);
         double dist = pow(std::abs(node_cartesian[0]-goal_cartesian_[0]),2)+ 
                       pow(std::abs(node_cartesian[1]-goal_cartesian_[1]),2);
@@ -372,7 +373,6 @@ public:
         if (nodes_.size()==0)
         {
             Node start_node(start_config_, -1);
-            // start_node.numofDOFs_ = numofDOFs_;
             nodes_.push_back(start_node);
             std::cout << "inserted first node" << std::endl;
             return;
