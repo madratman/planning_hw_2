@@ -6,6 +6,7 @@
 #include <math.h>
 #include <vector>
 #include <algorithm>
+#include <iostream>
 #include <limits>
 #include "mex.h"
 
@@ -284,7 +285,8 @@ public:
             Config goal_config,
             int num_max_iters,
             int epsilon,
-            int numofDOFs)
+            int numofDOFs,
+            double sample_goal_bias)
     {
         start_config_ = start_config;
         goal_config_ = goal_config;
@@ -294,6 +296,7 @@ public:
         epsilon_ = epsilon;
         numofDOFs_ = numofDOFs;
         insert_node(start_config);
+        sample_goal_bias_ = sample_goal_bias;
     }
 
     ~Tree(){}; // todo free mem
@@ -301,15 +304,22 @@ public:
     int get_nearest_index(const Config &config)
     {
         int idx_min = -1;
-        double min_dist = -std::numeric_limits<double>::infinity();
+        double min_dist = std::numeric_limits<double>::infinity();
         for (int node_idx=0; node_idx < nodes_.size(); node_idx++)
         {
+            // std::cout << "node_idx : " << node_idx <<", ";
+            // std::cout << "min_dist : " << min_dist <<", ";
+            // std::cout << "current_dist : " << nodes_[node_idx].get_dist_to_config(config) << std::endl;
             if (nodes_[node_idx].get_dist_to_config(config) < min_dist)
             {
+                // if (min_dist <= 0.01)
+                //     { idx_min=node_idx; break;}
                 min_dist = nodes_[node_idx].get_dist_to_config(config);
                 idx_min = node_idx;
+                // std::cout << "min_dist " << min_dist << ", idx_min " << idx_min << std::endl;
             }
         }
+        std::cout << std::endl;
         return idx_min;
     }
 
@@ -320,14 +330,17 @@ public:
             Node start_node(start_config_, -1);
             start_node.numofDOFs_ = numofDOFs_;
             nodes_.push_back(start_node);
+            std::cout << "inserted first node" << std::endl;
             return;
         }
 
         int idx_nearest = get_nearest_index(new_config);
+        std::cout << "got nearest index " << idx_nearest << std::endl; 
 
         // if new_config is not in collision
         if (IsValidArmConfiguration(new_config, numofDOFs_, map_, map_x_size_, map_y_size_))
         {
+            // std::cout << "valid. adding to tree " << std::endl;
             // move by epsilon
             for (int joint_idx=0; joint_idx<numofDOFs_;joint_idx++)
             {
@@ -348,6 +361,7 @@ public:
 
         else
         {
+            // std::cout << "invalid config " << std::endl;
             return;
         }
 
@@ -367,30 +381,32 @@ public:
 
     Config get_random_sample()
     {
+        std::cout << "num_samples_ : " << num_samples_ << std::endl; 
+        std::cout << "num_nodes : " << nodes_.size() << std::endl; 
         num_samples_++;
 
         if ((double) rand()/(double) RAND_MAX < sample_goal_bias_)
         {
+            // std::cout << "sampling goal config" << std::endl;
             return goal_config_;
         }
         else
         {
-            Config sample_config;
+            Config sample_config = new double[numofDOFs_];
+            // std::cout << "sampling random" << std::endl;
 
             for(int i = 0; i < numofDOFs_; ++i) 
             {
+                // std::cout << "i " << i << std::endl;
                 sample_config[i] = (double)rand()*(2*M_PI)/(double) RAND_MAX;
+                // std::cout << "sample_config[i]" << sample_config[i] << std::endl;
             }
 
+            // std::cout << "sampling done" << std::endl;
             return sample_config;
         }
 
     } 
-
-    // bool is_goal_reached_()
-    // {
-    //     return is_goal_reached_;
-    // }
 
     std::vector<Config> get_path()
     {
@@ -410,6 +426,13 @@ public:
         {
             if (is_goal_reached_)
             {
+                std::cout << " FOUND SOLUTION " << std::endl;
+                std::cout << " FOUND SOLUTION " << std::endl;
+                std::cout << " FOUND SOLUTION " << std::endl;
+                std::cout << " FOUND SOLUTION " << std::endl;
+                std::cout << " FOUND SOLUTION " << std::endl;
+                std::cout << " FOUND SOLUTION " << std::endl;
+                std::cout << " FOUND SOLUTION " << std::endl;
                 return true;
             }
 
@@ -419,12 +442,6 @@ public:
 
         return false;
     }
-
-
-    // bool is_reachable(const Config &config)
-    // {
-    //     if (nodes_[get_nearest_index(config)])
-    // }
 
     Config start_config_;
     Config goal_config_;
@@ -454,16 +471,16 @@ static void planner(
     //no plan by default
     *plan = NULL;
     *planlength = 0;
-    int epsilon = 0.1;
-    int num_max_iters = (int)1e6;
-
+    int epsilon = 1.0;
+    int num_max_iters = (int)1e7;
+    double sample_goal_bias = 0.5;
     // static
     Node temp(armstart_anglesV_rad);
     temp.set_numofDOFs(numofDOFs);
 
-    // Config start_config(armstart_anglesV_rad, -1);
-    // Config goal_config(armgoal_anglesV_rad, -1);
-    Tree rrt(armstart_anglesV_rad, armgoal_anglesV_rad, num_max_iters, epsilon, numofDOFs);
+    // // Config start_config(armstart_anglesV_rad, -1);
+    // // Config goal_config(armgoal_anglesV_rad, -1);
+    Tree rrt(armstart_anglesV_rad, armgoal_anglesV_rad, num_max_iters, epsilon, numofDOFs, sample_goal_bias);
     rrt.set_map(map, x_size, y_size);
     bool got_path = rrt.solve();
     if (got_path)
