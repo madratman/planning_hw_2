@@ -7,6 +7,7 @@
 #include "mex.h"
 #include <limits>
 #include <vector>
+#include <algorithm>
 
 /* Input Arguments */
 #define MAP_IN      prhs[0]
@@ -272,16 +273,22 @@ private:
 class Tree
 {
 public:
-    Tree(const Config &start_config, const Config &goal_config)
+    Tree(const Config &start_config, 
+            const Config &goal_config,
+            int num_max_iters,
+            int epsilon)
     {
         start_config_ = start_config;
         goal_config_ = goal_config;
         num_samples_ = 0;
         is_goal_reached_ = false;
-        insert_node(start_config);
+        num_max_iters_ = num_max_iters;
+        epsilon_ = epsilon;
         numofDOFs_ = goal_config.size();// maybe dont need this
+        insert_node(start_config);
     }
-    ~Tree();
+
+    ~Tree(); // todo free mem
 
     int get_nearest_index(const Config &config)
     {
@@ -345,6 +352,7 @@ public:
             path_.push_back(nodes_[idx_waypt].get_config);
             idx_waypt = nodes_[idx_waypt].get_parent_idx();
         }
+        std::reverse(path_.begin(), path_.end());
     }
 
     Config get_random_sample()
@@ -369,15 +377,39 @@ public:
 
     } 
 
-    bool is_goal_reached_()
-    {
-        return is_goal_reached_;
-    }
+    // bool is_goal_reached_()
+    // {
+    //     return is_goal_reached_;
+    // }
 
     std::vector<Config> get_path()
     {
         return path_;
     }
+
+    void set_map(map*, x_size, y_size)
+    {
+        map_ = map;
+        map_x_size_ = x_size;
+        map_y_size_ = y_size;
+    }
+
+    bool solve()
+    {
+        for (int iter=0; iter<num_max_iters_; iter++)
+        {
+            if (is_goal_reached_)
+            {
+                return true;
+            }
+
+            Config sample_config = get_random_sample();
+            insert_node(sample_config);
+        }
+
+        return false;
+    }
+
 
     // bool is_reachable(const Config &config)
     // {
@@ -389,6 +421,7 @@ public:
     std::vector<Node> nodes_;
     std::vector<Config> path_;
     int num_samples_;
+    int num_max_iters_;
     bool is_goal_reached_;
     int numofDOFs_;
     double* map_;
@@ -411,39 +444,29 @@ static void planner(
     //no plan by default
     *plan = NULL;
     *planlength = 0;
-        
-    //for now just do straight interpolation between start and goal checking for the validity of samples
 
-    double distance = 0;
-    int i,j;
-    for (j = 0; j < numofDOFs; j++)
+    Node start_config(armstart_anglesV_rad, -1);
+    Node goal_config(armgoal_anglesV_rad, -1);
+    Tree rrt(start_config, goal_config); // numofDOFs set using config size
+    rrt.set_map(map, x_size, y_size);
+    rrt.set_max_iters(num_max_iters_); 
+    got_path = rrt.solve();
+    if (got_path)
     {
-        if(distance < fabs(armstart_anglesV_rad[j] - armgoal_anglesV_rad[j]))
-            distance = fabs(armstart_anglesV_rad[j] - armgoal_anglesV_rad[j]);
-    }
-    int numofsamples = (int)(distance/(PI/20));
-    if(numofsamples < 2)
-    {
-        printf("the arm is already at the goal\n");
-        return;
-    }
-    *plan = (double**) malloc(numofsamples*sizeof(double*));
-    int firstinvalidconf = 1;
-    for (i = 0; i < numofsamples; i++)
-    {
-        (*plan)[i] = (double*) malloc(numofDOFs*sizeof(double)); 
-        for(j = 0; j < numofDOFs; j++)
+        std::vector<Config> path_vector = rrt.get_path();
+        *planlength = path_vector.size();
+        *plan = (double**) malloc(path_vector.size()*sizeof(double*));
+
+        for (i = 0; i < path_vector.size(); i++)
         {
-            (*plan)[i][j] = armstart_anglesV_rad[j] + ((double)(i)/(numofsamples-1))*(armgoal_anglesV_rad[j] - armstart_anglesV_rad[j]);
-        }
-        if(!IsValidArmConfiguration((*plan)[i], numofDOFs, map, x_size, y_size) && firstinvalidconf)
-        {
-            firstinvalidconf = 1;
-            printf("ERROR: Invalid arm configuration!!!\n");
-        }
-    }    
-    *planlength = numofsamples;
-    
+            (*plan)[i] = (double*) malloc(numofDOFs*sizeof(double)); 
+            for(j = 0; j < numofDOFs; j++)
+            {
+                (*plan)[i][j] = path_vector[i][j];
+            }
+        }            
+    }
+
     return;
 }
 
