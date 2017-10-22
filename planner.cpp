@@ -4,10 +4,10 @@
  *
  *=================================================================*/
 #include <math.h>
-#include "mex.h"
-#include <limits>
 #include <vector>
 #include <algorithm>
+#include <limits>
+#include "mex.h"
 
 /* Input Arguments */
 #define MAP_IN      prhs[0]
@@ -211,6 +211,8 @@ public:
     {
         config_ = config;
         parent_idx_ = -1;
+        numofDOFs_ = 4; // todo
+        goal_thresh_ = 10; // todo
     }
 
     Node(const Config config, int parent_idx)
@@ -227,7 +229,7 @@ public:
     double get_dist_to_config(Config config_2)
     {
         double total_dist = 0.0;
-        for (int joint_idx=0; joint_idx<numofDOFs; joint_idx++)
+        for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
         {
             total_dist = total_dist + 
                         std::abs(std::min(config_[joint_idx] - config_2[joint_idx],
@@ -259,24 +261,30 @@ public:
         return config_;
     }
 
-    ~Node();
+    ~Node(){};
 
-private:
-    // double* config_;// joint angles
+    void set_numofDOFs(int numofDOFs)
+    {
+        numofDOFs_ = numofDOFs;
+    }
+// private:
     Config config_;// joint angles
     int parent_idx_;
-    static int const numofDOFs;// = 4; initialize outside 
-    static double goal_thresh_;
+    // static int const numofDOFs_;// = 4; initialize outside 
+    // static double const goal_thresh_;
+    int numofDOFs_;// = 4; initialize outside 
+    double goal_thresh_;
 };
 
 
 class Tree
 {
 public:
-    Tree(const Config &start_config, 
-            const Config &goal_config,
+    Tree(Config start_config, 
+            Config goal_config,
             int num_max_iters,
-            int epsilon)
+            int epsilon,
+            int numofDOFs)
     {
         start_config_ = start_config;
         goal_config_ = goal_config;
@@ -284,17 +292,17 @@ public:
         is_goal_reached_ = false;
         num_max_iters_ = num_max_iters;
         epsilon_ = epsilon;
-        numofDOFs_ = goal_config.size();// maybe dont need this
+        numofDOFs_ = numofDOFs;
         insert_node(start_config);
     }
 
-    ~Tree(); // todo free mem
+    ~Tree(){}; // todo free mem
 
     int get_nearest_index(const Config &config)
     {
         int idx_min = -1;
-        double min_dist = -std::numeric_limits<double>::infinity()
-        for (int node_idx=0; node_idx<nodes.size(); node_idx++)
+        double min_dist = -std::numeric_limits<double>::infinity();
+        for (int node_idx=0; node_idx < nodes_.size(); node_idx++)
         {
             if (nodes_[node_idx].get_dist_to_config(config) < min_dist)
             {
@@ -302,14 +310,16 @@ public:
                 idx_min = node_idx;
             }
         }
-        return node_idx;
+        return idx_min;
     }
 
     void insert_node(const Config &new_config)
     {
         if (nodes_.size()==0)
         {
-            nodes_.push_back(new_config);
+            Node start_node(start_config_, -1);
+            start_node.numofDOFs_ = numofDOFs_;
+            nodes_.push_back(start_node);
             return;
         }
 
@@ -321,14 +331,14 @@ public:
             // move by epsilon
             for (int joint_idx=0; joint_idx<numofDOFs_;joint_idx++)
             {
-                new_config[joint_idx] = nodes_[idx_nearest].get_config[joint_idx] 
-                            + epsilon_*(new_config[joint_idx] - nodes_[idx_nearest].get_config[joint_idx]);
+                new_config[joint_idx] = nodes_[idx_nearest].get_config()[joint_idx] 
+                            + epsilon_*(new_config[joint_idx] - nodes_[idx_nearest].get_config()[joint_idx]);
             }
 
             Node new_node(new_config, idx_nearest);
             nodes_.push_back(new_node);
 
-            if new_node.is_in_goal_region()
+            if (new_node.is_in_goal_region(goal_config_))
             {
                 is_goal_reached_ = true;
                 construct_path();
@@ -349,7 +359,7 @@ public:
         int idx_waypt = nodes_.size()-1;
         while (idx_waypt!=-1)
         {
-            path_.push_back(nodes_[idx_waypt].get_config);
+            path_.push_back(nodes_[idx_waypt].get_config());
             idx_waypt = nodes_[idx_waypt].get_parent_idx();
         }
         std::reverse(path_.begin(), path_.end());
@@ -387,7 +397,7 @@ public:
         return path_;
     }
 
-    void set_map(map*, x_size, y_size)
+    void set_map(double* map, int x_size, int y_size)
     {
         map_ = map;
         map_x_size_ = x_size;
@@ -444,23 +454,28 @@ static void planner(
     //no plan by default
     *plan = NULL;
     *planlength = 0;
+    int epsilon = 0.1;
+    int num_max_iters = (int)1e6;
 
-    Node start_config(armstart_anglesV_rad, -1);
-    Node goal_config(armgoal_anglesV_rad, -1);
-    Tree rrt(start_config, goal_config); // numofDOFs set using config size
+    // static
+    Node temp(armstart_anglesV_rad);
+    temp.set_numofDOFs(numofDOFs);
+
+    // Config start_config(armstart_anglesV_rad, -1);
+    // Config goal_config(armgoal_anglesV_rad, -1);
+    Tree rrt(armstart_anglesV_rad, armgoal_anglesV_rad, num_max_iters, epsilon, numofDOFs);
     rrt.set_map(map, x_size, y_size);
-    rrt.set_max_iters(num_max_iters_); 
-    got_path = rrt.solve();
+    bool got_path = rrt.solve();
     if (got_path)
     {
         std::vector<Config> path_vector = rrt.get_path();
-        *planlength = path_vector.size();
+        *planlength = (int)path_vector.size();
         *plan = (double**) malloc(path_vector.size()*sizeof(double*));
 
-        for (i = 0; i < path_vector.size(); i++)
+        for (int i = 0; i < path_vector.size(); i++)
         {
             (*plan)[i] = (double*) malloc(numofDOFs*sizeof(double)); 
-            for(j = 0; j < numofDOFs; j++)
+            for(int j = 0; j < numofDOFs; j++)
             {
                 (*plan)[i][j] = path_vector[i][j];
             }
@@ -565,7 +580,7 @@ void mexFunction( int nlhs, mxArray *plhs[],
         }     
     }
     PLANLENGTH_OUT = mxCreateNumericMatrix( (mwSize)1, (mwSize)1, mxINT8_CLASS, mxREAL); 
-    int* planlength_out = mxGetPr(PLANLENGTH_OUT);
+    int* planlength_out = (int*) mxGetPr(PLANLENGTH_OUT);
     *planlength_out = planlength;
 
     return;
