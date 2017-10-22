@@ -213,7 +213,7 @@ public:
         config_ = config;
         parent_idx_ = -1;
         numofDOFs_ = 4; // todo
-        goal_thresh_ = 10; // todo
+        goal_thresh_joint_space_ = 10; // todo
     }
 
     Node(const Config config, int parent_idx)
@@ -239,16 +239,13 @@ public:
         return total_dist;
     }
 
-    bool is_in_goal_region(const Config &goal_config)
+    bool is_in_goal_region_joint_space(const Config &goal_config)
     {
-        if (get_dist_to_config(goal_config) < goal_thresh_)
+        if (get_dist_to_config(goal_config) < goal_thresh_joint_space_)
         {
             return true;
         }
-        else
-        {
-            return false;
-        }
+        return false;
     }
 
     // getters:
@@ -264,39 +261,48 @@ public:
 
     ~Node(){};
 
-    void set_numofDOFs(int numofDOFs)
-    {
-        numofDOFs_ = numofDOFs;
-    }
+    // void set_numofDOFs(int numofDOFs)
+    // {
+    //     numofDOFs_ = numofDOFs;
+    // }
 // private:
     Config config_;// joint angles
     int parent_idx_;
     // static int const numofDOFs_;// = 4; initialize outside 
     // static double const goal_thresh_;
     int numofDOFs_;// = 4; initialize outside 
-    double goal_thresh_;
+    double goal_thresh_joint_space_;
+    double goal_thresh_cartesian_;
 };
 
 
 class Tree
 {
 public:
-    Tree(Config start_config, 
+    Tree(Config start_config,
             Config goal_config,
             int num_max_iters,
             double epsilon,
             int numofDOFs,
-            double sample_goal_bias)
+            double sample_goal_bias,
+            double* map,
+            int x_size,
+            int y_size)
     {
         start_config_ = start_config;
         goal_config_ = goal_config;
         num_samples_ = 0;
         is_goal_reached_ = false;
+        goal_thresh_cartesian_ = 10;
         num_max_iters_ = num_max_iters;
         epsilon_ = epsilon;
         numofDOFs_ = numofDOFs;
-        insert_node(start_config);
         sample_goal_bias_ = sample_goal_bias;
+        map_ = map;
+        map_x_size_ = x_size;
+        map_y_size_ = y_size;
+        forward_kinematics(goal_config_, goal_cartesian_);
+        insert_node(start_config);
     }
 
     ~Tree(){}; // todo free mem
@@ -323,12 +329,50 @@ public:
         return idx_min;
     }
 
+
+    // todo confirm don't need y_size as we already check validity before adding to tree
+    void forward_kinematics(const Config &config, double* cartesian)
+    {
+        double x0,y0,x1,y1;
+        int i;
+        //iterate through all the links starting with the base
+        x1 = ((double)map_x_size_)/2.0;
+        y1 = 0;
+        for(i = 0; i < numofDOFs_; i++)
+        {
+            //compute the corresponding line segment
+            x0 = x1;
+            y0 = y1;
+            x1 = x0 + LINKLENGTH_CELLS*cos(2*PI-config[i]);
+            y1 = y0 - LINKLENGTH_CELLS*sin(2*PI-config[i]);
+        }
+
+        cartesian[0] = x1;
+        cartesian[1] = y1;
+    }
+
+    bool is_in_goal_region_cartesian_space(Node& node)
+    {
+        double* node_cartesian;
+        forward_kinematics(node.config_, node_cartesian);
+        double dist = pow(std::abs(node_cartesian[0]-goal_cartesian_[0]),2)+ 
+                      pow(std::abs(node_cartesian[1]-goal_cartesian_[1]),2);
+        dist = sqrt(dist);
+
+        if (dist < goal_thresh_cartesian_)
+        {   
+            return true;
+        }
+        return false;
+    }
+
+
     void insert_node(const Config &new_config)
     {
         if (nodes_.size()==0)
         {
             Node start_node(start_config_, -1);
-            start_node.numofDOFs_ = numofDOFs_;
+            // start_node.numofDOFs_ = numofDOFs_;
             nodes_.push_back(start_node);
             std::cout << "inserted first node" << std::endl;
             return;
@@ -353,10 +397,15 @@ public:
                 // std::cout << " to be added " << new_config[joint_idx] << std::endl;;
             }
 
-            Node new_node(new_config, idx_nearest);
+            Node new_node(new_config, idx_nearest); // parent_idx is idx_nearest
             nodes_.push_back(new_node);
 
-            if (new_node.is_in_goal_region(goal_config_))
+            // if (new_node.is_in_goal_region_joint_space(goal_config_))
+            // {
+            //     is_goal_reached_ = true;
+            //     construct_path();
+            // }
+            if (is_in_goal_region_cartesian_space(new_node))
             {
                 is_goal_reached_ = true;
                 construct_path();
@@ -418,12 +467,6 @@ public:
         return path_;
     }
 
-    void set_map(double* map, int x_size, int y_size)
-    {
-        map_ = map;
-        map_x_size_ = x_size;
-        map_y_size_ = y_size;
-    }
 
     bool solve()
     {
@@ -450,6 +493,7 @@ public:
 
     Config start_config_;
     Config goal_config_;
+    double* goal_cartesian_;
     std::vector<Node> nodes_;
     std::vector<Config> path_;
     int num_samples_;
@@ -461,6 +505,8 @@ public:
     int map_y_size_;
     double sample_goal_bias_;
     double epsilon_;
+    double goal_thresh_cartesian_; // todo
+
 };
 
 static void planner(
@@ -480,13 +526,21 @@ static void planner(
     int num_max_iters = (int)1e2;
     double sample_goal_bias = 0.3;
     // static
-    Node temp(armstart_anglesV_rad);
-    temp.set_numofDOFs(numofDOFs);
+    // Node temp(armstart_anglesV_rad);
+    // temp.set_numofDOFs(numofDOFs);
 
     // // Config start_config(armstart_anglesV_rad, -1);
     // // Config goal_config(armgoal_anglesV_rad, -1);
-    Tree rrt(armstart_anglesV_rad, armgoal_anglesV_rad, num_max_iters, epsilon, numofDOFs, sample_goal_bias);
-    rrt.set_map(map, x_size, y_size);
+    Tree rrt(armstart_anglesV_rad, 
+            armgoal_anglesV_rad, 
+            num_max_iters, 
+            epsilon, 
+            numofDOFs, 
+            sample_goal_bias,
+            map,
+            x_size,
+            y_size);
+
     bool got_path = rrt.solve();
     if (got_path)
     {
