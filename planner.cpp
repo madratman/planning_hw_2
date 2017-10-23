@@ -208,7 +208,7 @@ int IsValidArmConfiguration(double* angles, int numofDOFs, double* map, int x_si
 class Node
 {
 public:
-    Node(const Config config)
+    Node(Config config)
     {
         config_ = config;
         parent_idx_ = -1;
@@ -216,8 +216,9 @@ public:
         goal_thresh_joint_space_ = 10; // todo
     }
 
-    Node(const Config config, int parent_idx)
+    Node(Config config, int parent_idx)
     {
+        numofDOFs_ = 4; // todo
         config_ = config;
         parent_idx_ = parent_idx;
     }
@@ -232,8 +233,10 @@ public:
         double total_dist = 0.0;
         for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
         {
+            // std::cout << "config_[joint_idx] " << config_[joint_idx];
+            // std::cout << " config_2[joint_idx] " << config_2[joint_idx] << std::endl;
             total_dist = total_dist + 
-                        std::abs(std::min(config_[joint_idx] - config_2[joint_idx],
+                        std::fabs(std::min(config_[joint_idx] - config_2[joint_idx],
                                 2*M_PI-(config_[joint_idx] - config_2[joint_idx])));
         }
         return total_dist;
@@ -272,16 +275,16 @@ public:
     // static double const goal_thresh_;
     int numofDOFs_;// = 4; initialize outside 
     double goal_thresh_joint_space_;
-    double goal_thresh_cartesian_;
 };
 
 
 class Tree
 {
 public:
-    Tree(Config start_config,
-            Config goal_config,
+    Tree(const Config &start_config,
+            const Config &goal_config,
             int num_max_iters,
+            double goal_thresh_cartesian,
             double epsilon,
             int numofDOFs,
             double sample_goal_bias,
@@ -293,7 +296,7 @@ public:
         goal_config_ = goal_config;
         num_samples_ = 0;
         is_goal_reached_ = false;
-        goal_thresh_cartesian_ = 10;
+        goal_thresh_cartesian_ = goal_thresh_cartesian;
         num_max_iters_ = num_max_iters;
         epsilon_ = epsilon;
         numofDOFs_ = numofDOFs;
@@ -301,8 +304,14 @@ public:
         map_ = map;
         map_x_size_ = x_size;
         map_y_size_ = y_size;
-        goal_cartesian_ = new double[numofDOFs_];
+        goal_cartesian_ = new double[2];
+        start_cartesian_ = new double[2];
         forward_kinematics(goal_config_, goal_cartesian_);
+        forward_kinematics(start_config_, start_cartesian_);
+        std::cout << "start config " << start_config_[0] << " " << start_config_[1]<< " " << start_config_[2]<< " " << start_config_[3] << std::endl;
+        std::cout << "goal_config_ " << goal_config_[0] << " " << goal_config_[1]<< " " << goal_config_[2]<< " " << goal_config_[3] << std::endl;
+        std::cout << "start_cartesian_ " << start_cartesian_[0] << start_cartesian_[1] << std::endl;
+        std::cout << "goal_cartesian_ " << goal_cartesian_[0] << goal_cartesian_[1] << std::endl;
         insert_node(start_config);
     }
 
@@ -312,15 +321,13 @@ public:
     {
         int idx_min = -1;
         double min_dist = std::numeric_limits<double>::infinity();
-        for (int node_idx=0; node_idx < nodes_.size(); node_idx++)
+        for (int node_idx=0; node_idx < nodes_.size(); ++node_idx)
         {
             // std::cout << "node_idx : " << node_idx <<", ";
             // std::cout << "min_dist : " << min_dist <<", ";
             // std::cout << "current_dist : " << nodes_[node_idx].get_dist_to_config(config) << std::endl;
             if (nodes_[node_idx].get_dist_to_config(config) < min_dist)
             {
-                // if (min_dist <= 0.01)
-                //     { idx_min=node_idx; break;}
                 min_dist = nodes_[node_idx].get_dist_to_config(config);
                 idx_min = node_idx;
                 // std::cout << "min_dist " << min_dist << ", idx_min " << idx_min << std::endl;
@@ -356,8 +363,8 @@ public:
     {
         double* node_cartesian = new double[numofDOFs_];
         forward_kinematics(node.config_, node_cartesian);
-        double dist = pow(std::abs(node_cartesian[0]-goal_cartesian_[0]),2)+ 
-                      pow(std::abs(node_cartesian[1]-goal_cartesian_[1]),2);
+        double dist = pow(node_cartesian[0]-goal_cartesian_[0], 2) +
+                      pow(node_cartesian[1]-goal_cartesian_[1], 2);
         dist = sqrt(dist);
 
         if (dist < goal_thresh_cartesian_)
@@ -368,7 +375,7 @@ public:
     }
 
 
-    void insert_node(const Config &new_config)
+    void insert_node(Config new_config)
     {
         if (nodes_.size()==0)
         {
@@ -390,8 +397,6 @@ public:
             {
                 // std::cout << " nearest " << nodes_[idx_nearest].get_config()[joint_idx];
                 // std::cout << " sample " << new_config[joint_idx];
-                // double nearest = nodes_[idx_nearest].get_config()[joint_idx];
-                // double sample = new_config[joint_idx];
                 new_config[joint_idx] = nodes_[idx_nearest].get_config()[joint_idx] +
                             (epsilon_*( new_config[joint_idx] - nodes_[idx_nearest].get_config()[joint_idx] ));// TODO weird bug with non hardcoded epsilon
                 // std::cout << " to be added " << new_config[joint_idx] << std::endl;;
@@ -400,11 +405,6 @@ public:
             Node new_node(new_config, idx_nearest); // parent_idx is idx_nearest
             nodes_.push_back(new_node);
 
-            // if (new_node.is_in_goal_region_joint_space(goal_config_))
-            // {
-            //     is_goal_reached_ = true;
-            //     construct_path();
-            // }
             if (is_in_goal_region_cartesian_space(new_node))
             {
                 is_goal_reached_ = true;
@@ -470,16 +470,10 @@ public:
 
     bool solve()
     {
-        for (int iter=0; iter<num_max_iters_; iter++)
+        for (int iter=0; iter < num_max_iters_; iter++)
         {
             if (is_goal_reached_)
             {
-                std::cout << " FOUND SOLUTION " << std::endl;
-                std::cout << " FOUND SOLUTION " << std::endl;
-                std::cout << " FOUND SOLUTION " << std::endl;
-                std::cout << " FOUND SOLUTION " << std::endl;
-                std::cout << " FOUND SOLUTION " << std::endl;
-                std::cout << " FOUND SOLUTION " << std::endl;
                 std::cout << " FOUND SOLUTION " << std::endl;
                 return true;
             }
@@ -494,6 +488,7 @@ public:
     Config start_config_;
     Config goal_config_;
     double* goal_cartesian_;
+    double* start_cartesian_;
     std::vector<Node> nodes_;
     std::vector<Config> path_;
     int num_samples_;
@@ -523,8 +518,9 @@ static void planner(
     *plan = NULL;
     *planlength = 0;
     double epsilon = 0.1;
-    int num_max_iters = (int)1e2;
-    double sample_goal_bias = 0.3;
+    int num_max_iters = (int)1e6;
+    double sample_goal_bias = 0.4;
+    double goal_thresh_cartesian = 5;
     // static
     // Node temp(armstart_anglesV_rad);
     // temp.set_numofDOFs(numofDOFs);
@@ -534,6 +530,7 @@ static void planner(
     Tree rrt(armstart_anglesV_rad, 
             armgoal_anglesV_rad, 
             num_max_iters, 
+            goal_thresh_cartesian,
             epsilon, 
             numofDOFs, 
             sample_goal_bias,
