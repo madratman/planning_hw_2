@@ -283,7 +283,6 @@ class Tree
 public:
     Tree(const Config &start_config,
             const Config &goal_config,
-            int num_max_iters,
             double goal_thresh_cartesian,
             double epsilon,
             int num_steps_interp,
@@ -291,14 +290,14 @@ public:
             double sample_goal_bias,
             double* map,
             int x_size,
-            int y_size)
+            int y_size,
+            int tree_id)
     {
         start_config_ = start_config;
         goal_config_ = goal_config;
         num_samples_ = 0;
         is_goal_reached_ = false;
         goal_thresh_cartesian_ = goal_thresh_cartesian;
-        num_max_iters_ = num_max_iters;
         epsilon_ = epsilon;
         numofDOFs_ = numofDOFs;
         sample_goal_bias_ = sample_goal_bias;
@@ -312,8 +311,9 @@ public:
         forward_kinematics(start_config_, start_cartesian_);
         std::cout << "start config " << start_config_[0] << " " << start_config_[1]<< " " << start_config_[2]<< " " << start_config_[3] << std::endl;
         std::cout << "goal_config_ " << goal_config_[0] << " " << goal_config_[1]<< " " << goal_config_[2]<< " " << goal_config_[3] << std::endl;
-        std::cout << "start_cartesian_ " << start_cartesian_[0] << start_cartesian_[1] << std::endl;
-        std::cout << "goal_cartesian_ " << goal_cartesian_[0] << goal_cartesian_[1] << std::endl;
+        std::cout << "start_cartesian_ " << start_cartesian_[0] << ", " << start_cartesian_[1] << std::endl;
+        std::cout << "goal_cartesian_ " << goal_cartesian_[0] << ", " << goal_cartesian_[1] << std::endl;
+        tree_id_ = tree_id;
         insert_node(start_config);
     }
 
@@ -376,22 +376,20 @@ public:
         return false;
     }
 
-
-    void insert_node(Config new_config)
+    bool insert_node(Config new_config)
     {
         if (nodes_.size()==0)
         {
             Node start_node(start_config_, -1);
             nodes_.push_back(start_node);
             std::cout << "inserted first node" << std::endl;
-            return;
+            return true;
         }
 
         int idx_nearest = get_nearest_index(new_config);
-        std::cout << "got nearest index " << idx_nearest << std::endl; 
+        // std::cout << "got nearest index " << idx_nearest << std::endl; 
 
         // interpolate to ensure path is valid
-        // int num_steps_interp_ = 20; // param
         Config intermediate_config = new double[numofDOFs_];
         for (int idx_step; idx_step < num_steps_interp_; idx_step++)
         {
@@ -410,27 +408,29 @@ public:
             // add it to tree if it is valid 
             if (IsValidArmConfiguration(intermediate_config, numofDOFs_, map_, map_x_size_, map_y_size_))
             {
-                // if collision free, add to tree
+                continue;
                 // intermediate_config is now epsilon_ towards the new_config
-                Node new_node(intermediate_config, idx_nearest); // parent_idx is idx_nearest
-                nodes_.push_back(new_node);
-                idx_nearest = nodes_.size()-1; // nearest now points to last inserted
-                if (is_in_goal_region_cartesian_space(new_node))
-                {
-                    is_goal_reached_ = true;
-                    construct_path();
-                }
             }
             else
             {
                 // std::cout << "invalid config " << std::endl;
-                return;
+                // some intermediate config is in collision => return false
+                return false;
             }                       
-
         }
 
-
-        return;
+        Node new_node(intermediate_config, idx_nearest); // parent_idx is idx_nearest
+        nodes_.push_back(new_node);
+        idx_nearest = nodes_.size()-1; // nearest now points to last inserted
+        // std::cout << "added node " <<std::endl;
+        if (is_in_goal_region_cartesian_space(new_node))
+        {
+            is_goal_reached_ = true;
+            construct_path();
+            return true; // goal reached itself! => return true 
+        }
+        // managed to insert all intermediate configs => return true
+        return true;
     }
 
     void construct_path()
@@ -447,8 +447,8 @@ public:
 
     Config get_random_sample()
     {
-        std::cout << "num_samples_ : " << num_samples_ << std::endl; 
-        std::cout << "num_nodes : " << nodes_.size() << std::endl; 
+        // std::cout << "num_samples_ : " << num_samples_ << std::endl; 
+        // std::cout << "num_nodes : " << nodes_.size() << std::endl; 
         num_samples_++;
 
         if ((double) rand()/(double) RAND_MAX < sample_goal_bias_)
@@ -471,30 +471,11 @@ public:
             // std::cout << "sampling done" << std::endl;
             return sample_config;
         }
-
     } 
 
     std::vector<Config> get_path()
     {
         return path_;
-    }
-
-
-    bool solve()
-    {
-        for (int iter=0; iter < num_max_iters_; iter++)
-        {
-            if (is_goal_reached_)
-            {
-                std::cout << " FOUND SOLUTION " << std::endl;
-                return true;
-            }
-
-            Config sample_config = get_random_sample();
-            insert_node(sample_config);
-        }
-
-        return false;
     }
 
     Config start_config_;
@@ -504,7 +485,6 @@ public:
     std::vector<Node> nodes_;
     std::vector<Config> path_;
     int num_samples_;
-    int num_max_iters_;
     bool is_goal_reached_;
     int numofDOFs_;
     double* map_;
@@ -514,9 +494,10 @@ public:
     double epsilon_;
     double goal_thresh_cartesian_; // todo
     int num_steps_interp_;
+    int tree_id_;
 };
 
-static void planner(
+static void planner_rrt(
     double* map,
     int x_size,
     int y_size,
@@ -526,23 +507,18 @@ static void planner(
     double*** plan,
     int* planlength)
 {
-    //no plan by default
     *plan = NULL;
     *planlength = 0;
-    double epsilon = 0.1;
+    // double epsilon = 0.01; // looks sexier
+    double epsilon = 0.1; // runs faster
     int num_max_iters = (int)1e6;
-    double sample_goal_bias = 0.0;
+    double sample_goal_bias = 0.3;
     double goal_thresh_cartesian = 5;
-    int num_steps_interp = 20;
-    // static
-    // Node temp(armstart_anglesV_rad);
-    // temp.set_numofDOFs(numofDOFs);
+    int num_steps_interp = 20 ;
+    int tree_id = 0 ;
 
-    // // Config start_config(armstart_anglesV_rad, -1);
-    // // Config goal_config(armgoal_anglesV_rad, -1);
-    Tree rrt(armstart_anglesV_rad, 
+    Tree tree(armstart_anglesV_rad, 
             armgoal_anglesV_rad, 
-            num_max_iters, 
             goal_thresh_cartesian,
             epsilon,
             num_steps_interp,
@@ -550,12 +526,27 @@ static void planner(
             sample_goal_bias,
             map,
             x_size,
-            y_size);
+            y_size,
+            tree_id);
 
-    bool got_path = rrt.solve();
+    bool got_path=false;
+
+    for (int iter=0; iter < num_max_iters; iter++)
+    {
+        if (tree.is_goal_reached_)
+        {
+            std::cout << " FOUND SOLUTION " << std::endl;
+            got_path = true;
+            break;
+        }
+
+        Config sample_config = tree.get_random_sample();
+        tree.insert_node(sample_config);
+    }
+
     if (got_path)
     {
-        std::vector<Config> path_vector = rrt.get_path();
+        std::vector<Config> path_vector = tree.get_path();
         *planlength = (int)path_vector.size();
         *plan = (double**) malloc(path_vector.size()*sizeof(double*));
 
@@ -571,6 +562,170 @@ static void planner(
 
     return;
 }
+
+
+void swap_trees(Tree* current_tree_ptr, bool &is_start_tree, Tree &start_tree, Tree &goal_tree)
+{
+    if (is_start_tree)
+    {
+        current_tree_ptr = &goal_tree;
+        is_start_tree = false;
+    }
+    else
+    {
+        current_tree_ptr = &start_tree;
+        is_start_tree = true;
+    }
+    return;
+}
+
+static void planner_rrt_connect(
+    double* map,
+    int x_size,
+    int y_size,
+    double* armstart_anglesV_rad,
+    double* armgoal_anglesV_rad,
+    int numofDOFs,
+    double*** plan,
+    int* planlength)
+{
+    *plan = NULL;
+    *planlength = 0;
+    double epsilon = 0.2;
+    double sample_goal_bias = 0.0;
+    double goal_thresh_cartesian = 5;
+    int num_steps_interp = 20;
+    Tree start_tree(armstart_anglesV_rad, 
+            armgoal_anglesV_rad, 
+            goal_thresh_cartesian,
+            epsilon,
+            num_steps_interp,
+            numofDOFs, 
+            sample_goal_bias,
+            map,
+            x_size,
+            y_size,
+            0);
+
+   Tree goal_tree(armgoal_anglesV_rad,
+            armstart_anglesV_rad, 
+            goal_thresh_cartesian,
+            epsilon,
+            num_steps_interp,
+            numofDOFs, 
+            sample_goal_bias,
+            map,
+            x_size,
+            y_size,
+            100);
+
+    Tree* current_tree_ptr;
+    current_tree_ptr = &start_tree;
+    // current_tree_ptr = &goal_tree;
+    bool is_start_tree = true;
+    Config current_config; // todo unintuitive code. Config is already a pointer 
+    Node* nearest_neighbour;
+    bool sample_was_valid = false; 
+    bool path_found = false; 
+    bool trees_connect = false; 
+    int num_max_iters = 100;
+
+    for (int iter=0; iter < num_max_iters; iter++)
+    {
+        if (path_found)
+        {
+            break;
+        }
+        if (is_start_tree)
+            std::cout << "Iter " << iter << ", Start Tree" << std::endl;
+        else
+            std::cout << "Iter " << iter << ", Goal Tree" << std::endl;
+        std::cout << "start_tree size " << start_tree.nodes_.size() 
+                  << ", goal_tree size " << goal_tree.nodes_.size() << std::endl; 
+
+        // Get random sample
+        Config sample_config = current_tree_ptr->get_random_sample();
+        // try to insert in current tree
+        sample_was_valid = current_tree_ptr->insert_node(sample_config);
+        // std::cout << "sample_was_valid " << sample_was_valid << std::endl;
+
+        if (current_tree_ptr->is_goal_reached_)
+        {
+            std::cout << "current_tree_ptr reached goal itself !!!" << std::endl;
+            path_found = true;
+        }
+        // now we swap the trees. Note in the original paper, swap is written after the next
+        // if clause, however we're trying to now "tree->insert()"" sample_config into the 
+        // other tree for the "Connect" part of the algorithm
+        // swap_trees(current_tree_ptr, is_start_tree, start_tree, goal_tree);
+        if (is_start_tree)
+        {
+            current_tree_ptr = &goal_tree;
+            is_start_tree = false;
+        }
+        else
+        {
+            current_tree_ptr = &start_tree;
+            is_start_tree = true;
+        }
+
+        // if (sample_was_valid) is equivalent to Line 4, Figure 5 : if not(Extend(Ta, q_rand) = Trapped)
+        // of the RRT Connect paper http://citeseerx.ist.psu.edu/viewdocdownload?doi=10.1.1.2.2971&rep=rep1&type=pdf
+        if (sample_was_valid)
+        {
+            trees_connect = current_tree_ptr->insert_node(sample_config);
+            if ((start_tree.nodes_.size()>0) && (goal_tree.nodes_.size()>0))
+            {
+                std::cout << "checking if connect " << std::endl;
+                if (trees_connect)
+                {
+                    std::cout << "trees connect !!!" << std::endl;
+                    path_found = true;
+                    break;
+                }            
+            }
+        }
+    }
+
+    if (path_found)
+    {
+        std::vector<Config> path_start_tree = start_tree.get_path();
+        std::vector<Config> path_goal_tree = goal_tree.get_path(); 
+        std::reverse(path_goal_tree.begin(), path_goal_tree.end());
+
+        std::cout << "path_start_tree.size() " << path_start_tree.size() << std::endl;
+        std::cout << "path_goal_tree.size() " << path_goal_tree.size() << std::endl;
+        *planlength = (int)path_start_tree.size() + (int)path_goal_tree.size();
+        *plan = (double**) malloc(*planlength*sizeof(double*));
+
+        // fill in the start tree's path in plan
+        if (path_start_tree.size() > 0)
+        {
+            for (int i = 0; i < path_start_tree.size(); i++)
+            {
+                (*plan)[i] = (double*) malloc(numofDOFs*sizeof(double)); 
+                for(int j = 0; j < numofDOFs; j++)
+                {
+                    (*plan)[i][j] = path_start_tree[i][j];
+                }
+            }            
+        } 
+        if (path_goal_tree.size() > 0)
+        {
+            std::cout << "fuck"<< std::endl;
+            for (int i = 0; i < path_start_tree.size(); i++)
+            {
+                (*plan)[i+path_start_tree.size()] = (double*) malloc(numofDOFs*sizeof(double)); 
+                for(int j = 0; j < numofDOFs; j++)
+                {
+                    (*plan)[i+path_start_tree.size()][j] = path_start_tree[i][j];
+                }
+            }
+        }
+    }
+    return;
+}
+
 
 //prhs contains input parameters (3): 
 //1st is matrix with all the obstacles
@@ -630,13 +785,16 @@ void mexFunction( int nlhs, mxArray *plhs[],
     int planlength = 0;
     
     //you can may be call the corresponding planner function here
-    //if (planner_id == RRT)
-    //{
-    //    plannerRRT(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength);
-    //}
+    switch (planner_id)
+    {
+        case RRT :
+           planner_rrt(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength);
+        case RRTCONNECT :
+           planner_rrt_connect(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength);
+    }
     
     //dummy planner which only computes interpolated path
-    planner(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength); 
+    // planner(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength); 
     
     printf("planner returned plan of length=%d\n", planlength); 
     
