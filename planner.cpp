@@ -286,6 +286,7 @@ public:
             int num_max_iters,
             double goal_thresh_cartesian,
             double epsilon,
+            int num_steps_interp,
             int numofDOFs,
             double sample_goal_bias,
             double* map,
@@ -301,6 +302,7 @@ public:
         epsilon_ = epsilon;
         numofDOFs_ = numofDOFs;
         sample_goal_bias_ = sample_goal_bias;
+        num_steps_interp_ = num_steps_interp;
         map_ = map;
         map_x_size_ = x_size;
         map_y_size_ = y_size;
@@ -388,37 +390,47 @@ public:
         int idx_nearest = get_nearest_index(new_config);
         std::cout << "got nearest index " << idx_nearest << std::endl; 
 
-        // if new_config is not in collision
-        if (IsValidArmConfiguration(new_config, numofDOFs_, map_, map_x_size_, map_y_size_))
+        // interpolate to ensure path is valid
+        // int num_steps_interp_ = 20; // param
+        Config intermediate_config = new double[numofDOFs_];
+        for (int idx_step; idx_step < num_steps_interp_; idx_step++)
         {
-            // std::cout << "valid. adding to tree " << std::endl;
-            // move by epsilon
-            for (int joint_idx=0; joint_idx<numofDOFs_;joint_idx++)
+            // std::cout<< "idx_step " << idx_step << std::endl;
+            // interpolate the intermediate config
+            for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
             {
                 // std::cout << " nearest " << nodes_[idx_nearest].get_config()[joint_idx];
-                // std::cout << " sample " << new_config[joint_idx];
-                new_config[joint_idx] = nodes_[idx_nearest].get_config()[joint_idx] +
-                            (epsilon_*( new_config[joint_idx] - nodes_[idx_nearest].get_config()[joint_idx] ));// TODO weird bug with non hardcoded epsilon
-                // std::cout << " to be added " << new_config[joint_idx] << std::endl;;
+                // std::cout << ", sample " << new_config[joint_idx];
+
+                intermediate_config[joint_idx] = nodes_[idx_nearest].get_config()[joint_idx] +
+                            ((double)idx_step*(double)epsilon_*(new_config[joint_idx] - nodes_[idx_nearest].get_config()[joint_idx])/(double)num_steps_interp_); 
+                // std::cout << ", to be added " << intermediate_config[joint_idx] << std::endl;
             }
 
-            Node new_node(new_config, idx_nearest); // parent_idx is idx_nearest
-            nodes_.push_back(new_node);
-
-            if (is_in_goal_region_cartesian_space(new_node))
+            // add it to tree if it is valid 
+            if (IsValidArmConfiguration(intermediate_config, numofDOFs_, map_, map_x_size_, map_y_size_))
             {
-                is_goal_reached_ = true;
-                construct_path();
+                // if collision free, add to tree
+                // intermediate_config is now epsilon_ towards the new_config
+                Node new_node(intermediate_config, idx_nearest); // parent_idx is idx_nearest
+                nodes_.push_back(new_node);
+                idx_nearest = nodes_.size()-1; // nearest now points to last inserted
+                if (is_in_goal_region_cartesian_space(new_node))
+                {
+                    is_goal_reached_ = true;
+                    construct_path();
+                }
             }
-            return;
+            else
+            {
+                // std::cout << "invalid config " << std::endl;
+                return;
+            }                       
+
         }
 
-        else
-        {
-            // std::cout << "invalid config " << std::endl;
-            return;
-        }
 
+        return;
     }
 
     void construct_path()
@@ -501,7 +513,7 @@ public:
     double sample_goal_bias_;
     double epsilon_;
     double goal_thresh_cartesian_; // todo
-
+    int num_steps_interp_;
 };
 
 static void planner(
@@ -519,8 +531,9 @@ static void planner(
     *planlength = 0;
     double epsilon = 0.1;
     int num_max_iters = (int)1e6;
-    double sample_goal_bias = 0.4;
+    double sample_goal_bias = 0.0;
     double goal_thresh_cartesian = 5;
+    int num_steps_interp = 20;
     // static
     // Node temp(armstart_anglesV_rad);
     // temp.set_numofDOFs(numofDOFs);
@@ -531,7 +544,8 @@ static void planner(
             armgoal_anglesV_rad, 
             num_max_iters, 
             goal_thresh_cartesian,
-            epsilon, 
+            epsilon,
+            num_steps_interp,
             numofDOFs, 
             sample_goal_bias,
             map,
