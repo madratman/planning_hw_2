@@ -367,11 +367,12 @@ public:
     {
         // double first_term = pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_);
         if (nodes_.size() > 1)
-            radius_rrt_star_ = std::min( pow(1000 * log(nodes_.size())/nodes_.size(), (1.0/(double)numofDOFs_)),
-                                        epsilon_rrt_star_);
+            // radius_rrt_star_ = std::min( pow(1000 * log(nodes_.size())/nodes_.size(), (1.0/(double)numofDOFs_)),
+            //                             epsilon_rrt_star_);
 
             // radius_rrt_star_ = std::min(pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_), 
-            //                     epsilon_rrt_star_);
+                                // epsilon_rrt_star_);
+            radius_rrt_star_ = 5;
         return;
     }
 
@@ -390,6 +391,7 @@ public:
             {
                 closest_node_idx_ = node_idx;
                 min_dist = curr_dist;
+                std::cout << "min_dist " << min_dist  << "\n";
             }
             if (curr_dist <= radius_rrt_star_)
             {
@@ -437,23 +439,39 @@ public:
         // TODO note this is implemented in a different way than RRT. 
         // I am not sure now which one is correct now/
 
+
+        int idx_nearest = get_nearest_index(sample_config);
+        Config intermediate_config = new double[numofDOFs_];
+        for (int idx_step; idx_step < num_steps_interp_; idx_step++)
+        {
+            for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
+            {
+                intermediate_config[joint_idx] = nodes_[idx_nearest].get_config()[joint_idx] +
+                            ((double)idx_step*(double)epsilon_*(sample_config[joint_idx] - nodes_[idx_nearest].get_config()[joint_idx])/(double)num_steps_interp_); 
+            }
+
+            if (!IsValidArmConfiguration(intermediate_config, numofDOFs_, map_, map_x_size_, map_y_size_))
+            { return false; }                       
+        }
+        
+        sample_config = intermediate_config;
         update_rrt_star_radius();
         update_nearest_nodes_and_dist(sample_config);
         std::cout << "num_nodes " << nodes_.size() << std::endl; 
         std::cout << "radius_rrt_star_ " << radius_rrt_star_ << std::endl; 
         std::cout << "closest_node_idx_ " << closest_node_idx_ << std::endl; 
 
-        if(closest_node_dist_ > epsilon_rrt_star_)
-        {
-            for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
-            {
-                // std::cout << "sample_config[" << joint_idx << "] " << sample_config[joint_idx] << std::endl;
-                sample_config[joint_idx] = nodes_[closest_node_idx_].get_config()[joint_idx] +
-                            epsilon_rrt_star_*((sample_config[joint_idx] - nodes_[closest_node_idx_].get_config()[joint_idx])/closest_node_dist_); 
-                // std::cout << "sample_config[" << joint_idx << "] " << sample_config[joint_idx] << std::endl;
-            }
-            closest_node_dist_ = epsilon_rrt_star_;
-        }
+        // if(closest_node_dist_ > epsilon_rrt_star_)
+        // {
+        //     for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
+        //     {
+        //         // std::cout << "sample_config[" << joint_idx << "] " << sample_config[joint_idx] << std::endl;
+        //         sample_config[joint_idx] = nodes_[closest_node_idx_].get_config()[joint_idx] +
+        //                     epsilon_rrt_star_*((sample_config[joint_idx] - nodes_[closest_node_idx_].get_config()[joint_idx])/closest_node_dist_); 
+        //         // std::cout << "sample_config[" << joint_idx << "] " << sample_config[joint_idx] << std::endl;
+        //     }
+        //     closest_node_dist_ = epsilon_rrt_star_;
+        // }
         // Line 9 http://www.cs.cmu.edu/~maxim/classes/robotplanning_grad/lectures/RRT_16782_fall17.pdf
         if(is_transition_valid(nodes_[closest_node_idx_].get_config(), sample_config))
         {
@@ -833,7 +851,7 @@ static void planner_rrt_star(
     double gamma = 1000;
     double epsilon_rrt_star = M_PI/4; 
     double radius; 
-    int num_max_iters = 1000;
+    int num_max_iters = 10000;
 
     Tree tree(armstart_anglesV_rad, 
             armgoal_anglesV_rad, 
@@ -867,21 +885,21 @@ static void planner_rrt_star(
         tree.extend_tree_rrt_star(sample_config);
     }
 
-    // if (got_path)
-    // {
-    //     std::vector<Config> path_vector = tree.get_path();
-    //     *planlength = (int)path_vector.size();
-    //     *plan = (double**) malloc(path_vector.size()*sizeof(double*));
+    if (got_path)
+    {
+        std::vector<Config> path_vector = tree.get_path();
+        *planlength = (int)path_vector.size();
+        *plan = (double**) malloc(path_vector.size()*sizeof(double*));
 
-    //     for (int i = 0; i < path_vector.size(); i++)
-    //     {
-    //         (*plan)[i] = (double*) malloc(numofDOFs*sizeof(double)); 
-    //         for(int j = 0; j < numofDOFs; j++)
-    //         {
-    //             (*plan)[i][j] = path_vector[i][j];
-    //         }
-    //     }            
-    // }
+        for (int i = 0; i < path_vector.size(); i++)
+        {
+            (*plan)[i] = (double*) malloc(numofDOFs*sizeof(double)); 
+            for(int j = 0; j < numofDOFs; j++)
+            {
+                (*plan)[i][j] = path_vector[i][j];
+            }
+        }            
+    }
 
     return;
 }
