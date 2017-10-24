@@ -243,10 +243,11 @@ public:
     {
         double total_dist = 0.0;
         double curr_diff = 0.0;
+        double min_joint_angle = 0.0;
         for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
         {
             curr_diff = config_[joint_idx] - config_2[joint_idx];
-            min_joint_angle = std::min(curr_diff, 2*M_PI - curr_diff)
+            min_joint_angle = std::min(curr_diff, 2*M_PI - curr_diff);
             total_dist += pow(std::fabs(min_joint_angle), 2);
         }
         return sqrt(total_dist);
@@ -301,8 +302,8 @@ public:
             double* map,
             int x_size,
             int y_size,
-            gamma, // rrt* user defined constant
-            epsilon_rrt_star,
+            double gamma, // rrt* user defined constant
+            double epsilon_rrt_star,
             int tree_id)
     {
         start_config_ = start_config;
@@ -356,7 +357,7 @@ public:
     }
 
     // https://www.wikiwand.com/en/Volume_of_an_n-ball
-    void get_volume_R4_hyperball()
+    double get_volume_R4_hyperball()
     {
         return pow(M_PI, 2.0)/2.0;// 1/2*(pi**2)*r^4
     }
@@ -366,7 +367,7 @@ public:
     {
         // double first_term = pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_);
         if (nodes_.size() > 0)
-            radius_rrt_star_ = min(pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_), 
+            radius_rrt_star_ = std::min(pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_), 
                                 epsilon_rrt_star_);
         return;
     }
@@ -380,7 +381,7 @@ public:
 
         for (int node_idx; node_idx < nodes_.size(); node_idx++)
         {
-            curr_dist = nodes_[node_idx]->get_dist_to_config(sample_config);
+            curr_dist = nodes_[node_idx].get_dist_to_config(sample_config);
             if (curr_dist < min_dist)
             {
                 closest_node_idx_ = node_idx;
@@ -445,23 +446,24 @@ public:
         update_nearest_nodes_and_dist(sample_config);
 
         // Line 9 http://www.cs.cmu.edu/~maxim/classes/robotplanning_grad/lectures/RRT_16782_fall17.pdf
-        if(is_transition_valid(nodes_[closest_node_idx_].get_config(), sample_config)
+        if(is_transition_valid(nodes_[closest_node_idx_].get_config(), sample_config))
         {
             // dump collision checking results into vector to save computation for the second loop
             std::vector<bool> is_valid_nearest_nodes_vec;
             int min_node_idx = closest_node_idx_;
-            double min_cost = nodes_[closest_node_idx_].cost + closest_node_dist_;
+            double min_cost = nodes_[closest_node_idx_].cost_ + closest_node_dist_;
             double curr_cost = 0;
+            bool is_transition_valid_curr = false;
 
-            for (loop_idx=0; loop_idx<nearest_nodes_indices_.size(); loop_idx++)
+            for (int loop_idx=0; loop_idx<nearest_nodes_indices_.size(); loop_idx++)
             {
-                is_transition_valid_curr = is_transition_valid(nodes_[nearest_nodes_indices_[loop_idx]].cost,
+                is_transition_valid_curr = is_transition_valid(nodes_[nearest_nodes_indices_[loop_idx]].get_config(),
                                                                 sample_config);
                 is_valid_nearest_nodes_vec.push_back(is_transition_valid_curr);
                 if (is_transition_valid_curr)
                 {
                     // TODO bad unintuitive code. indices of indices, and indices together
-                    curr_cost = nodes_[nearest_nodes_indices_[loop_idx]].cost + 
+                    curr_cost = nodes_[nearest_nodes_indices_[loop_idx]].cost_ + 
                                     nearest_nodes_dist_[loop_idx]; 
                     if (curr_cost < min_cost)
                     {
@@ -472,64 +474,29 @@ public:
             }
 
             // insert the sample into the tree with the currect parent idx and cost
-            node_to_insert = Node(sample_config, min_node_idx, min_cost);
-            nodes_.push_back(node_to_insert);
+            nodes_.push_back( Node(sample_config, min_node_idx, min_cost) );
 
-            for (loop_idx=0; loop_idx<nearest_nodes_indices_.size(); loop_idx++)
+            if (are_close_enough_cartesian_space(sample_config, goal_config_))
+            {
+                is_goal_reached_ = true;
+                construct_path();
+            }
+
+            for (int loop_idx=0; loop_idx<nearest_nodes_indices_.size(); loop_idx++)
             {
                 if (loop_idx == min_node_idx)
                     continue;
-                curr_cost = nodes_[nearest_nodes_indices_[loop_idx]].cost 
+                curr_cost = nodes_[nearest_nodes_indices_[loop_idx]].cost_ 
                                 + nearest_nodes_dist_[loop_idx]; 
-                if (is_valid_nearest_nodes_vec[loop_idx]  
-                        && curr_cost < nearest_nodes_dist_[loop_idx])
+                if (is_valid_nearest_nodes_vec[loop_idx] && curr_cost < nearest_nodes_dist_[loop_idx])
                 {
-                    nodes_[nearest_nodes_indices_[loop_idx]].cost = curr_cost;
-                    nodes_[nearest_nodes_indices_[loop_idx]].parent_idx_ = curr_cost;
+                    nodes_[nearest_nodes_indices_[loop_idx]].cost_ = curr_cost;
+                    nodes_[nearest_nodes_indices_[loop_idx]].parent_idx_ = loop_idx;
                 }
             }
         }
-
-        Config intermediate_config = new double[numofDOFs_];
-        for (int idx_step; idx_step < num_steps_interp_; idx_step++)
-        {
-            // std::cout<< "idx_step " << idx_step << std::endl;
-            // interpolate the intermediate config
-            for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
-            {
-                // std::cout << " nearest " << nodes_[idx_nearest].get_config()[joint_idx];
-                // std::cout << ", sample " << sample_config[joint_idx];
-                intermediate_config[joint_idx] = nodes_[idx_nearest].get_config()[joint_idx] +
-                            ((double)idx_step*(double)epsilon_*(sample_config[joint_idx] - nodes_[idx_nearest].get_config()[joint_idx])/(double)num_steps_interp_); 
-                // std::cout << ", to be added " << intermediate_config[joint_idx] << std::endl;
-            }
-
-            // add it to tree if it is valid 
-            if (IsValidArmConfiguration(intermediate_config, numofDOFs_, map_, map_x_size_, map_y_size_))
-            {
-                // intermediate_config is now epsilon_ towards the sample_config
-                Node new_node(intermediate_config, idx_nearest); // parent_idx is idx_nearest
-                nodes_.push_back(new_node);
-                idx_nearest = nodes_.size()-1; // nearest now points to last inserted
-                // std::cout << "added node " <<std::endl;
-                if (are_close_enough_cartesian_space(intermediate_config, sample_config))
-                {            
-                    construct_path();
-                    return true;  
-                }
-            }
-            else
-            {
-                // std::cout << "invalid config " << std::endl;
-                // some intermediate config is in collision => return false
-                return false;
-            }                       
-        }
-
-
-        // managed to insert all intermediate configs => return true
-        return true;
     }
+
     // todo confirm don't need y_size as we already check validity before adding to tree
     void forward_kinematics(const Config &config, double* cartesian)
     {
@@ -745,6 +712,15 @@ public:
     double goal_thresh_cartesian_; // todo
     int num_steps_interp_;
     int tree_id_;
+    // rrt* stuff:
+    double delta_;
+    double gamma_;
+    double epsilon_rrt_star_;
+    double radius_rrt_star_;
+    int closest_node_idx_;
+    std::vector<int> nearest_nodes_indices_;
+    std::vector<double> nearest_nodes_dist_;
+    double closest_node_dist_;
 };
 
 static void planner_rrt(
@@ -756,6 +732,8 @@ static void planner_rrt(
     int numofDOFs,
     double*** plan,
     int* planlength)
+
+
 {
     *plan = NULL;
     *planlength = 0;
@@ -777,6 +755,8 @@ static void planner_rrt(
             map,
             x_size,
             y_size,
+            0, // rrt* user defined constant
+            0,
             tree_id);
 
     bool got_path=false;
@@ -815,15 +795,6 @@ static void planner_rrt(
     return;
 }
 
-// http://www.cs.cmu.edu/~maxim/classes/robotplanning_grad/lectures/RRT_16782_fall17.pdf
-// slide 36
-static double get_rrt_star_radius(int num_nodes, double epsilon, int numofDOFs, double gamma)
-{
-    double delta = get_volume_R4_hyperball();
-    double first_term = pow( gamma / delta * log(num_nodes) / num_nodes , 1.0/(double)numofDOFs);
-    return min(first_term, epsilon);
-}
-
 static void planner_rrt_star(
     double* map,
     int x_size,
@@ -845,7 +816,8 @@ static void planner_rrt_star(
     int tree_id = 0;
     //  user defined constant for RRT* radius
     // slide 36 @ http://www.cs.cmu.edu/~maxim/classes/robotplanning_grad/lectures/RRT_16782_fall17.pdf
-    double gamma;
+    double gamma = 1000;
+    double epsilon_rrt_star = M_PI/4; 
     double radius; 
 
     Tree tree(armstart_anglesV_rad, 
@@ -858,6 +830,8 @@ static void planner_rrt_star(
             map,
             x_size,
             y_size,
+            0, // rrt* user defined constant
+            0,
             tree_id);
 
     bool got_path=false;
@@ -874,7 +848,7 @@ static void planner_rrt_star(
         Config sample_config = tree.get_random_sample();
         if(!IsValidArmConfiguration(sample_config, numofDOFs, map, x_size, y_size))
             continue;
-        tree.insert_node(sample_config);
+        tree.extend_tree_rrt_star(sample_config);
     }
 
     if (got_path)
@@ -939,7 +913,10 @@ static void planner_rrt_connect(
             map,
             x_size,
             y_size,
+            0,
+            0,
             0);
+
 
    Tree goal_tree(armgoal_anglesV_rad,
             armstart_anglesV_rad, 
@@ -951,6 +928,8 @@ static void planner_rrt_connect(
             map,
             x_size,
             y_size,
+            0,
+            0,
             100);
 
     Tree* current_tree_ptr;
