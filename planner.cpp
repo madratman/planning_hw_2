@@ -329,7 +329,7 @@ public:
         tree_id_ = tree_id;
         insert_node(start_config);
         // RRT*
-        delta_ = get_volume_R4_hyperball(); //todo generalize to numofDOFs_. currently hardcoded for R4 due to gamma function
+        delta_ = get_volume_R5_hyperball(); //todo generalize to numofDOFs_. currently hardcoded for R4 due to gamma function
         gamma_ = gamma;
         epsilon_rrt_star_ = epsilon_rrt_star;
     }
@@ -357,18 +357,21 @@ public:
     }
 
     // https://www.wikiwand.com/en/Volume_of_an_n-ball
-    double get_volume_R4_hyperball()
+    double get_volume_R5_hyperball()
     {
-        return pow(M_PI, 2.0)/2.0;// 1/2*(pi**2)*r^4
+        return pow(M_PI, 2.5)/3.32335;//http://www.wolframalpha.com/input/?i=gamma+function(3.5)
     }
 
     // slide 36 @ http://www.cs.cmu.edu/~maxim/classes/robotplanning_grad/lectures/RRT_16782_fall17.pdf 
     void update_rrt_star_radius()
     {
         // double first_term = pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_);
-        if (nodes_.size() > 0)
-            radius_rrt_star_ = std::min(pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_), 
-                                epsilon_rrt_star_);
+        if (nodes_.size() > 1)
+            radius_rrt_star_ = std::min( pow(1000 * log(nodes_.size())/nodes_.size(), (1.0/(double)numofDOFs_)),
+                                        epsilon_rrt_star_);
+
+            // radius_rrt_star_ = std::min(pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_), 
+            //                     epsilon_rrt_star_);
         return;
     }
 
@@ -376,6 +379,7 @@ public:
     // TODO to make radius a param a tree, or not?
     void update_nearest_nodes_and_dist(Config sample_config)
     {
+        closest_node_idx_ = 0;
         double min_dist = std::numeric_limits<double>::infinity();
         double curr_dist = 0.0;
 
@@ -405,16 +409,16 @@ public:
         Config intermediate_config = new double[numofDOFs_];
         for (int idx_step; idx_step < num_steps_interp_; idx_step++)
         {
-            for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
+            for (int joint_idx=0; joint_idx < numofDOFs_; joint_idx++)
             {
+                // std::cout << "intermediate_config[ " << joint_idx << "] "<<  intermediate_config[joint_idx] 
+                //             << " sample_config " << sample_config[joint_idx] << std::endl;
                 intermediate_config[joint_idx] = curr_config[joint_idx] +
                             ((double)idx_step*(double)epsilon_*(sample_config[joint_idx] - curr_config[joint_idx])/(double)num_steps_interp_);
             }
 
             if (!IsValidArmConfiguration(intermediate_config, numofDOFs_, map_, map_x_size_, map_y_size_))
-            { 
-                return false;
-            }
+            { return false; }
         }
         return true;
     }
@@ -432,24 +436,29 @@ public:
         // steer sample to nearest neighbour and ensure it's within epsilon_rrt_star_ distance. 
         // TODO note this is implemented in a different way than RRT. 
         // I am not sure now which one is correct now/
+
+        update_rrt_star_radius();
+        update_nearest_nodes_and_dist(sample_config);
+        std::cout << "num_nodes " << nodes_.size() << std::endl; 
+        std::cout << "radius_rrt_star_ " << radius_rrt_star_ << std::endl; 
+        std::cout << "closest_node_idx_ " << closest_node_idx_ << std::endl; 
+
         if(closest_node_dist_ > epsilon_rrt_star_)
         {
             for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
             {
+                // std::cout << "sample_config[" << joint_idx << "] " << sample_config[joint_idx] << std::endl;
                 sample_config[joint_idx] = nodes_[closest_node_idx_].get_config()[joint_idx] +
                             epsilon_rrt_star_*((sample_config[joint_idx] - nodes_[closest_node_idx_].get_config()[joint_idx])/closest_node_dist_); 
+                // std::cout << "sample_config[" << joint_idx << "] " << sample_config[joint_idx] << std::endl;
             }
             closest_node_dist_ = epsilon_rrt_star_;
         }
-
-        update_rrt_star_radius();
-        update_nearest_nodes_and_dist(sample_config);
-
         // Line 9 http://www.cs.cmu.edu/~maxim/classes/robotplanning_grad/lectures/RRT_16782_fall17.pdf
         if(is_transition_valid(nodes_[closest_node_idx_].get_config(), sample_config))
         {
             // dump collision checking results into vector to save computation for the second loop
-            std::vector<bool> is_valid_nearest_nodes_vec;
+            is_valid_nearest_nodes_vec_.clear();
             int min_node_idx = closest_node_idx_;
             double min_cost = nodes_[closest_node_idx_].cost_ + closest_node_dist_;
             double curr_cost = 0;
@@ -459,7 +468,7 @@ public:
             {
                 is_transition_valid_curr = is_transition_valid(nodes_[nearest_nodes_indices_[loop_idx]].get_config(),
                                                                 sample_config);
-                is_valid_nearest_nodes_vec.push_back(is_transition_valid_curr);
+                is_valid_nearest_nodes_vec_.push_back(is_transition_valid_curr);
                 if (is_transition_valid_curr)
                 {
                     // TODO bad unintuitive code. indices of indices, and indices together
@@ -474,9 +483,10 @@ public:
             }
 
             // insert the sample into the tree with the currect parent idx and cost
-            nodes_.push_back( Node(sample_config, min_node_idx, min_cost) );
+            Node node_to_insert(sample_config, min_node_idx, min_cost);
+            nodes_.push_back(node_to_insert);
 
-            if (are_close_enough_cartesian_space(sample_config, goal_config_))
+            if (is_in_goal_region_cartesian_space(node_to_insert))
             {
                 is_goal_reached_ = true;
                 construct_path();
@@ -488,7 +498,7 @@ public:
                     continue;
                 curr_cost = nodes_[nearest_nodes_indices_[loop_idx]].cost_ 
                                 + nearest_nodes_dist_[loop_idx]; 
-                if (is_valid_nearest_nodes_vec[loop_idx] && curr_cost < nearest_nodes_dist_[loop_idx])
+                if (is_valid_nearest_nodes_vec_[loop_idx] && curr_cost < nearest_nodes_dist_[loop_idx])
                 {
                     nodes_[nearest_nodes_indices_[loop_idx]].cost_ = curr_cost;
                     nodes_[nearest_nodes_indices_[loop_idx]].parent_idx_ = loop_idx;
@@ -539,10 +549,13 @@ public:
         double* cartesian_2 = new double[numofDOFs_];
         forward_kinematics(config_1, cartesian_1);
         forward_kinematics(config_2, cartesian_2);
+        std::cout << "cartesian_1 : (" << cartesian_1[0] << ", " << cartesian_1[1] << std::endl;
+        std::cout << "cartesian_2 : (" << cartesian_2[0] << ", " << cartesian_2[1] << std::endl;
         double dist = pow(cartesian_1[0]-cartesian_2[0], 2) +
                       pow(cartesian_1[1]-cartesian_2[1], 2);
         dist = sqrt(dist);
 
+        std::cout << "cartesian dist "<< dist << std::endl;
         if (dist < goal_thresh_cartesian_)
         {   
             return true;
@@ -720,7 +733,9 @@ public:
     int closest_node_idx_;
     std::vector<int> nearest_nodes_indices_;
     std::vector<double> nearest_nodes_dist_;
+    std::vector<int> is_valid_nearest_nodes_vec_;
     double closest_node_dist_;
+
 };
 
 static void planner_rrt(
@@ -809,7 +824,6 @@ static void planner_rrt_star(
     *planlength = 0;
     // double epsilon = 0.01; // looks sexier
     double epsilon = 0.1; // runs faster
-    int num_max_iters = (int)1e6;
     double sample_goal_bias = 0.3;
     double goal_thresh_cartesian = 5; // this is epsilon
     int num_steps_interp = 20;
@@ -819,6 +833,7 @@ static void planner_rrt_star(
     double gamma = 1000;
     double epsilon_rrt_star = M_PI/4; 
     double radius; 
+    int num_max_iters = 1000;
 
     Tree tree(armstart_anglesV_rad, 
             armgoal_anglesV_rad, 
@@ -838,6 +853,7 @@ static void planner_rrt_star(
 
     for (int iter=0; iter < num_max_iters; iter++)
     {
+        std::cout << "iter " << iter << std::endl;
         if (tree.is_goal_reached_)
         {
             std::cout << " FOUND SOLUTION " << std::endl;
@@ -851,21 +867,21 @@ static void planner_rrt_star(
         tree.extend_tree_rrt_star(sample_config);
     }
 
-    if (got_path)
-    {
-        std::vector<Config> path_vector = tree.get_path();
-        *planlength = (int)path_vector.size();
-        *plan = (double**) malloc(path_vector.size()*sizeof(double*));
+    // if (got_path)
+    // {
+    //     std::vector<Config> path_vector = tree.get_path();
+    //     *planlength = (int)path_vector.size();
+    //     *plan = (double**) malloc(path_vector.size()*sizeof(double*));
 
-        for (int i = 0; i < path_vector.size(); i++)
-        {
-            (*plan)[i] = (double*) malloc(numofDOFs*sizeof(double)); 
-            for(int j = 0; j < numofDOFs; j++)
-            {
-                (*plan)[i][j] = path_vector[i][j];
-            }
-        }            
-    }
+    //     for (int i = 0; i < path_vector.size(); i++)
+    //     {
+    //         (*plan)[i] = (double*) malloc(numofDOFs*sizeof(double)); 
+    //         for(int j = 0; j < numofDOFs; j++)
+    //         {
+    //             (*plan)[i][j] = path_vector[i][j];
+    //         }
+    //     }            
+    // }
 
     return;
 }
@@ -941,7 +957,7 @@ static void planner_rrt_connect(
     bool sample_was_valid = false; 
     bool path_found = false; 
     bool trees_connect = false; 
-    int num_max_iters = 1e4;
+    int num_max_iters = 1e6;
 
     for (int iter=0; iter < num_max_iters; iter++)
     {
@@ -1109,6 +1125,10 @@ void mexFunction( int nlhs, mxArray *plhs[],
     if (planner_id==RRTCONNECT)
     {
         planner_rrt_connect(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength);
+    }
+    if (planner_id==RRTSTAR)
+    {
+        planner_rrt_star(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength);
     }
     
     //dummy planner which only computes interpolated path
