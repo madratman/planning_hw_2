@@ -7,5 +7,5 @@ Implementation of Sampling Based Motion Planning Algorithms :
 - PRM 
 for a planar, 4 DoF arm 
 
-HW assignment available [here](https://pdfs.semanticscholar.org/eff8/a9d8c6812b4d4922c8681fdfc8eee02aa96b.pdf)   
+HW assignment available [herehttp://www.cs.cmu.edu/~maxim/classes/robotplanning_grad/hw/hw2_16782_fall17.pdf)   
 Will be making this agnostic to state space soon!
