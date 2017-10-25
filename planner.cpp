@@ -384,7 +384,7 @@ public:
         double min_dist = std::numeric_limits<double>::infinity();
         double curr_dist = 0.0;
 
-        for (int node_idx; node_idx < nodes_.size(); node_idx++)
+        for (int node_idx=0; node_idx < nodes_.size(); node_idx++)
         {
             curr_dist = nodes_[node_idx].get_dist_to_config(sample_config);
             if (curr_dist < min_dist)
@@ -409,7 +409,7 @@ public:
     bool is_transition_valid(Config curr_config, Config sample_config)
     {
         Config intermediate_config = new double[numofDOFs_];
-        for (int idx_step; idx_step < num_steps_interp_; idx_step++)
+        for (int idx_step=0; idx_step < num_steps_interp_; idx_step++)
         {
             for (int joint_idx=0; joint_idx < numofDOFs_; joint_idx++)
             {
@@ -443,7 +443,7 @@ public:
 
         int idx_nearest = get_nearest_index(sample_config);
         Config intermediate_config = new double[numofDOFs_];
-        for (int idx_step; idx_step < num_steps_interp_; idx_step++)
+        for (int idx_step=0; idx_step < num_steps_interp_; idx_step++)
         {
             for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
             {
@@ -601,7 +601,7 @@ public:
 
         // interpolate to ensure path is valid
         Config intermediate_config = new double[numofDOFs_];
-        for (int idx_step; idx_step < num_steps_interp_; idx_step++)
+        for (int idx_step=0; idx_step < num_steps_interp_; idx_step++)
         {
             // std::cout<< "idx_step " << idx_step << std::endl;
             // interpolate the intermediate config
@@ -649,7 +649,7 @@ public:
 
         // interpolate to ensure path is valid
         Config intermediate_config = new double[numofDOFs_];
-        for (int idx_step; idx_step < num_steps_interp_; idx_step++)
+        for (int idx_step=0; idx_step < num_steps_interp_; idx_step++)
         {
             // std::cout<< "idx_step " << idx_step << std::endl;
             // interpolate the intermediate config
@@ -1039,6 +1039,7 @@ public:
         if (nodes_.size() > 1)
             radius_rrt_star_ = std::min(pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_), 
                                 epsilon_rrt_star_);
+        radius_rrt_star_= 5;
         return;
     }
 
@@ -1069,9 +1070,12 @@ public:
         double min_dist = std::numeric_limits<double>::infinity();
         double curr_dist = 0.0;
 
-        for (int node_idx; node_idx < nodes_.size(); node_idx++)
+        // std::cout << "update_nearest_nodes_and_dist :: nodes_.size() "
+        //           << nodes_.size() << std::endl;
+        for (int node_idx=0; node_idx < nodes_.size(); node_idx++)
         {
             curr_dist = nodes_[node_idx].get_dist_to_config(sample_node_ptr->config_);
+            // std::cout << "node_idx " << node_idx << "curr_dist " << curr_dist << std::endl;
             if (curr_dist < min_dist)
             {
                 closest_node_idx = node_idx;
@@ -1090,7 +1094,7 @@ public:
     bool is_transition_valid(Config curr_config, Config sample_config)
     {
         Config intermediate_config = new double[numofDOFs_];
-        for (int idx_step; idx_step < num_steps_interp_; idx_step++)
+        for (int idx_step=0; idx_step < num_steps_interp_; idx_step++)
         {
             for (int joint_idx=0; joint_idx < numofDOFs_; joint_idx++)
             {
@@ -1139,7 +1143,8 @@ public:
 
     void build_graph()
     {
-        for (int iter=0; iter < num_max_iters_; iter++)
+        // for (int iter=0; iter < num_max_iters_; iter++)
+        while(true)
         {
             Config sample_config = get_random_sample();
             if(!IsValidArmConfiguration(sample_config, numofDOFs_, map_, map_x_size_, map_y_size_))
@@ -1148,6 +1153,10 @@ public:
             update_rrt_star_radius();
             PRM_Node* curr_node_ptr = new PRM_Node(sample_config, false, false, -1);
             update_nearest_nodes_and_dist(curr_node_ptr);
+            std::cout << "radius_rrt_star_ " << radius_rrt_star_ << std::endl;
+            std::cout << "nodes_.size() " << nodes_.size() << std::endl;
+            // std::cout << "curr_node_ptr->nearest_nodes_indices_.size() " 
+                        // << curr_node_ptr->nearest_nodes_indices_.size() << std::endl;
             int curr_node_idx = nodes_.size()+1;
             nodes_.push_back(*curr_node_ptr);
 
@@ -1371,7 +1380,7 @@ static void planner_prm(
     double gamma = 100;
     double epsilon_rrt_star = M_PI/4; 
     double radius; 
-    int num_max_iters = 100000;
+    int num_max_iters = 100;
 
     bool got_path=false;
 
@@ -1417,14 +1426,15 @@ static void planner_prm(
     prm_graph.goal_node_ptr_ = &prm_graph.goal_node_; 
 
     prm_graph.build_graph();
-    std::cout << "prm_graph.nodes_.size()" << prm_graph.nodes_.size() << "\n";
 
     std::queue<PRM_Node*> prm_queue;
     prm_queue.push(prm_graph.start_node_ptr_);
             
+    std::cout << "prm_graph.nodes_.size()" << prm_graph.nodes_.size() << "\n";
     PRM_Node* curr_node_ptr;
     while(prm_queue.size() != 0) 
     {
+        std::cout << "prm_queue.size() " << prm_queue.size() << std::endl;
         curr_node_ptr = prm_queue.front();
         prm_queue.pop();
         if (curr_node_ptr == prm_graph.goal_node_ptr_) 
@@ -1433,8 +1443,11 @@ static void planner_prm(
             break;
         }
         PRM_Node* curr_neighbour_ptr;
+        std::cout << "queue curr_node_ptr->nearest_nodes_indices_.size() "
+                  << curr_node_ptr->nearest_nodes_indices_.size() << std::endl;
         for(int loop_idx = 0; loop_idx < curr_node_ptr->nearest_nodes_indices_.size(); loop_idx++)
         {
+            std::cout << "loop_idx " << loop_idx << std::endl;
             double curr_neighbour_idx = curr_node_ptr->nearest_nodes_indices_[loop_idx];
             *curr_neighbour_ptr = prm_graph.nodes_[curr_neighbour_idx];
             if (curr_neighbour_ptr->idx_ == -1) 
