@@ -1,0 +1,179 @@
+start config 0.652432 1.93125 0.860195 4.05817
+goal_config_ 0.493918 1.56935 3.36496 2.4795
+start_cartesian_ 37.2711, 21.7832
+goal_cartesian_ 10.3997, 10.5136
+num_samples 446
+plan_quality 4.68438
+planner returned plan of length=9
+Elapsed time is 0.009069 seconds.
+
+start config 0.717638 1.67035 1.22259 5.82314
+goal_config_ 0.122001 1.79388 4.58133 1.34459
+start_cartesian_ 47.1414, 12.0223
+goal_cartesian_ 35.9967, 20.5208
+num_samples 8168
+plan_quality 1.75841
+planner returned plan of length=8
+Elapsed time is 0.042096 seconds.
+
+start config 1.87432 1.6701 0.656577 0.172465
+goal_config_ 0.208275 2.01372 5.93779 5.6466
+start_cartesian_ 28.8727, 28.5795
+goal_cartesian_ 42.0223, 9.82714
+num_samples 5071
+plan_quality 12.4021
+planner returned plan of length=27
+Elapsed time is 0.053993 seconds.
+
+start config 1.60309 1.69365 6.21852 0.465455
+goal_config_ 1.72631 0.462405 0.618807 3.92077
+start_cartesian_ 36.6502, 15.5567
+goal_cartesian_ 32.8695, 3.12985
+num_samples 273
+plan_quality 8.90138
+planner returned plan of length=21
+Elapsed time is 0.002572 seconds.
+
+start config 1.33401 5.46338 2.45872 2.01888
+goal_config_ 0.584495 1.91973 1.35622 5.7559
+start_cartesian_ 13.4062, 22.7114
+goal_cartesian_ 30.9615, 21.9595
+num_samples 7008
+plan_quality 4.7719
+planner returned plan of length=16
+Elapsed time is 0.066661 seconds.
+
+start config 1.80205 0.262999 4.96894 6.28258
+goal_config_ 1.82529 0.5846 3.81504 2.33055
+start_cartesian_ 34.9082, 3.01626
+goal_cartesian_ 13.495, 6.5598
+num_samples 1050
+plan_quality 14.4166
+planner returned plan of length=34
+Elapsed time is 0.014747 seconds.
+
+start config 1.61756 2.83166 1.74987 0.574301
+goal_config_ 1.51102 5.90349 5.69665 1.34955
+start_cartesian_ 21.9763, 38.3054
+goal_cartesian_ 41.0516, 1.49614
+num_samples 3551
+plan_quality 12.3254
+planner returned plan of length=28
+Elapsed time is 0.044017 seconds.
+
+start config 1.75223 5.467 2.34361 2.06755
+goal_config_ 0.195863 2.87109 1.79959 3.2159
+start_cartesian_ 17.6001, 8.52573
+goal_cartesian_ 9.65547, 4.16733
+num_samples 288
+plan_quality 1.30501
+planner returned plan of length=3
+Elapsed time is 0.001924 seconds.
+
+start config 0.0975708 0.759666 2.86549 2.75685
+goal_config_ 0.852278 1.71209 1.58936 0.203251
+start_cartesian_ 15.5825, 20.6838
+goal_cartesian_ 34.7891, 20.7812
+num_samples 2101
+plan_quality 2.57984
+planner returned plan of length=8
+Elapsed time is 0.013526 seconds.
+
+start config 0.153279 2.9266 1.56858 5.49196
+goal_config_ 1.43449 2.62251 1.88224 5.69503
+start_cartesian_ 33.6415, 16.4384
+goal_cartesian_ 29.723, 11.4989
+num_samples 37
+plan_quality 3.79397
+planner returned plan of length=11
+Elapsed time is 0.001237 seconds.
+
+start config 1.56185 2.42496 1.23919 4.18571
+goal_config_ 0.0249774 2.24864 1.93738 2.44227
+start_cartesian_ 15.1786, 27.3605
+goal_cartesian_ 8.82211, 18.8225
+num_samples 8
+plan_quality 2.86192
+planner returned plan of length=9
+Elapsed time is 0.000403 seconds.
+
+start config 1.18887 2.17637 0.392124 4.98453
+goal_config_ 1.57269 5.78496 1.90018 3.82518
+start_cartesian_ 29.5765, 3.26595
+goal_cartesian_ 28.0357, 16.874
+num_samples 1000
+plan_quality 4.59395
+planner returned plan of length=11
+Elapsed time is 0.009271 seconds.
+
+start config 1.34491 2.792 0.0394511 5.3128
+goal_config_ 1.13205 5.87905 2.46231 5.49613
+start_cartesian_ 40.0978, 12.8173
+goal_cartesian_ 27.9268, 2.30481
+num_samples 23781
+plan_quality 9.35383
+planner returned plan of length=21
+Elapsed time is 0.124782 seconds.
+
+start config 1.56379 0.421933 1.84615 2.61139
+goal_config_ 1.07284 0.301974 4.44542 1.33387
+start_cartesian_ 23.2736, 38.7663
+goal_cartesian_ 38.7391, 21.8302
+num_samples 1209
+plan_quality 10.8249
+planner returned plan of length=23
+Elapsed time is 0.017574 seconds.
+
+start config 1.3294 1.80765 5.05074 5.77482
+goal_config_ 1.74287 0.880885 3.19568 2.8383
+start_cartesian_ 27.0989, 5.13096
+goal_cartesian_ 11.1687, 29.9566
+num_samples 755
+plan_quality 4.70483
+planner returned plan of length=10
+Elapsed time is 0.007044 seconds.
+
+start config 1.05227 2.0794 5.43266 4.06564
+goal_config_ 1.07726 5.60969 3.05913 0.0874643
+start_cartesian_ 35.4741, 0.0225936
+goal_cartesian_ 32.8907, 13.115
+num_samples 1598
+plan_quality 11.2773
+planner returned plan of length=23
+Elapsed time is 0.014890 seconds.
+
+start config 1.79939 6.01357 2.40583 2.79022
+goal_config_ 0.729222 2.22121 2.70895 2.47181
+start_cartesian_ 6.4269, 21.2788
+goal_cartesian_ 17.6449, 19.2434
+num_samples 290
+plan_quality 1.46829
+planner returned plan of length=3
+Elapsed time is 0.001489 seconds.
+
+start config 0.504473 2.48276 2.55424 1.86238
+goal_config_ 0.783771 1.60667 2.82915 0.95083
+start_cartesian_ 17.1559, 16.3944
+goal_cartesian_ 28.7925, 38.2359
+num_samples 490
+plan_quality 3.64025
+planner returned plan of length=12
+Elapsed time is 0.008061 seconds.
+
+start config 1.41977 5.4001 2.20373 6.0465
+goal_config_ 0.155651 2.09209 1.16245 3.43439
+start_cartesian_ 29.1507, 14.483
+goal_cartesian_ 15.557, 21.3753
+num_samples 6461
+plan_quality 8.08526
+planner returned plan of length=19
+Elapsed time is 0.072174 seconds.
+
+start config 0.506921 2.50711 0.754732 0.896646
+goal_config_ 1.58599 1.16138 2.83523 2.69196
+start_cartesian_ 48.0895, 30.0558
+goal_cartesian_ 13.8492, 35.8792
+num_samples 469
+plan_quality 3.94577
+planner returned plan of length=6
+Elapsed time is 0.002258 seconds.

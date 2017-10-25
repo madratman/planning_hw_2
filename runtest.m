@@ -12,8 +12,9 @@ hold on;
 %armplan should be a matrix of D by N 
 %where D is the number of DOFs in the arm (length of armstart) and
 %N is the number of steps in the plan 
+tic
 armplan = armplanner(envmap, armstart, armgoal, planner_id); 
-
+toc
 fprintf(1, 'plan of length %d was found\n', size(armplan,1));
 
 %draw the plan

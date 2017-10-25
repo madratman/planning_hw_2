@@ -427,7 +427,7 @@ public:
 
     bool extend_tree_rrt_star(Config sample_config)
     {
-        std::cout << std::endl; 
+        // std::cout << std::endl; 
         if (nodes_.size()==0)
         {
             Node start_node(start_config_, -1);
@@ -571,13 +571,13 @@ public:
         double* cartesian_2 = new double[numofDOFs_];
         forward_kinematics(config_1, cartesian_1);
         forward_kinematics(config_2, cartesian_2);
-        std::cout << "cartesian_1 : (" << cartesian_1[0] << ", " << cartesian_1[1] << std::endl;
-        std::cout << "cartesian_2 : (" << cartesian_2[0] << ", " << cartesian_2[1] << std::endl;
+        // std::cout << "cartesian_1 : (" << cartesian_1[0] << ", " << cartesian_1[1] << std::endl;
+        // std::cout << "cartesian_2 : (" << cartesian_2[0] << ", " << cartesian_2[1] << std::endl;
         double dist = pow(cartesian_1[0]-cartesian_2[0], 2) +
                       pow(cartesian_1[1]-cartesian_2[1], 2);
         dist = sqrt(dist);
 
-        std::cout << "cartesian dist "<< dist << std::endl;
+        // std::cout << "cartesian dist "<< dist << std::endl;
         if (dist < goal_thresh_cartesian_)
         {   
             return true;
@@ -760,6 +760,28 @@ public:
 
 };
 
+static double calc_plan_quality(double*** plan, int* planlength, int numofDOFs) 
+{
+    double total_dist = 0.0;
+    for (int i = 0; i < *planlength - 1; i++)
+    {
+        Config curr_config = (*plan)[i];
+        Config next_config = (*plan)[i+1];
+        double curr_dist = 0.0;
+        double curr_diff = 0.0;
+        double min_joint_angle = 0.0;
+
+        for (int joint_idx=0; joint_idx<numofDOFs; joint_idx++)
+        {
+            curr_diff = curr_config[joint_idx] - next_config[joint_idx];
+            min_joint_angle = std::min(curr_diff, 2*M_PI - curr_diff);
+            curr_dist += pow(std::fabs(min_joint_angle), 2);
+        }
+        total_dist += sqrt(curr_dist);
+    }
+    return total_dist;
+}
+
 static void planner_rrt(
     double* map,
     int x_size,
@@ -777,7 +799,7 @@ static void planner_rrt(
     // double epsilon = 0.01; // looks sexier
     double epsilon = 0.1; // runs faster
     int num_max_iters = (int)1e6;
-    double sample_goal_bias = 0.3;
+    double sample_goal_bias = 0.0;
     double goal_thresh_cartesian = 5;
     int num_steps_interp = 20 ;
     int tree_id = 0 ;
@@ -796,7 +818,27 @@ static void planner_rrt(
             0,
             tree_id);
 
-    bool got_path=false;
+    bool got_path=false;   
+    int num_samples = 0;
+
+    // // random samples for result
+    // int curr_num_samples = 0;
+    // int max_num_samples = 40;
+    // while(1)
+    // {
+    //     if (curr_num_samples>max_num_samples-1)
+    //     { break; }
+    //     Config sample_config = tree.get_random_sample();
+    //     if(IsValidArmConfiguration(sample_config, numofDOFs, map, x_size, y_size))
+    //     {
+    //         curr_num_samples++;
+    //         for (int joint_idx=0; joint_idx<numofDOFs; joint_idx++)
+    //         {
+    //             std::cout << sample_config[joint_idx] << ", ";
+    //         }
+    //         std::cout << "\n";
+    //     }
+    // }
 
     for (int iter=0; iter < num_max_iters; iter++)
     {
@@ -810,6 +852,7 @@ static void planner_rrt(
         Config sample_config = tree.get_random_sample();
         if(!IsValidArmConfiguration(sample_config, numofDOFs, map, x_size, y_size))
             continue;
+        num_samples++;
         tree.insert_node(sample_config);
     }
 
@@ -828,6 +871,7 @@ static void planner_rrt(
             }
         }            
     }
+    std::cout << "num_samples " << num_samples << "\n";
 
     return;
 }
@@ -845,10 +889,10 @@ static void planner_rrt_star(
     *plan = NULL;
     *planlength = 0;
     // double epsilon = 0.01; // looks sexier
-    double epsilon = 0.4; // runs faster
-    double sample_goal_bias = 0.5;
+    double epsilon = 0.2; // runs faster
+    double sample_goal_bias = 0.3;
     double goal_thresh_cartesian = 5; // this is epsilon
-    int num_steps_interp = 10;
+    int num_steps_interp = 20;
     int tree_id = 0;
     //  user defined constant for RRT* radius
     // slide 36 @ http://www.cs.cmu.edu/~maxim/classes/robotplanning_grad/lectures/RRT_16782_fall17.pdf
@@ -872,6 +916,7 @@ static void planner_rrt_star(
             tree_id);
 
     bool got_path=false;
+    int num_samples = 0;
 
     for (int iter=0; iter < num_max_iters; iter++)
     {
@@ -886,6 +931,7 @@ static void planner_rrt_star(
         Config sample_config = tree.get_random_sample();
         if(!IsValidArmConfiguration(sample_config, numofDOFs, map, x_size, y_size))
             continue;
+        num_samples++;
         tree.extend_tree_rrt_star(sample_config);
     }
 
@@ -904,6 +950,7 @@ static void planner_rrt_star(
             }
         }            
     }
+    std::cout << "num_samples " << num_samples << "\n";
 
     return;
 }
@@ -1110,6 +1157,8 @@ public:
 
     bool propagate_start_goal_connectivity(PRM_Node* curr_node_ptr) 
     {
+        // std::cout << "curr_node_ptr->is_conn_to_start_ "
+        //           << curr_node_ptr->is_conn_to_start_ << std::endl; 
         bool is_start_and_goal_conn = (curr_node_ptr->is_conn_to_start_
                                     && curr_node_ptr->is_conn_to_goal_);
         // allocated memory for curr_neighbour_ptr
@@ -1134,6 +1183,7 @@ public:
             {
                 if( propagate_start_goal_connectivity(curr_neighbour_ptr) ) 
                 {
+                    // std::cout << "yes! \n\n";
                     is_start_and_goal_conn = true;
                 }
             }
@@ -1143,8 +1193,8 @@ public:
 
     void build_graph()
     {
-        // for (int iter=0; iter < num_max_iters_; iter++)
-        while(true)
+        for (int iter=0; iter < num_max_iters_; iter++)
+        // while(true)
         {
             Config sample_config = get_random_sample();
             if(!IsValidArmConfiguration(sample_config, numofDOFs_, map_, map_x_size_, map_y_size_))
@@ -1153,8 +1203,8 @@ public:
             update_rrt_star_radius();
             PRM_Node* curr_node_ptr = new PRM_Node(sample_config, false, false, -1);
             update_nearest_nodes_and_dist(curr_node_ptr);
-            std::cout << "radius_rrt_star_ " << radius_rrt_star_ << std::endl;
-            std::cout << "nodes_.size() " << nodes_.size() << std::endl;
+            // std::cout << "radius_rrt_star_ " << radius_rrt_star_ << std::endl;
+            // std::cout << "nodes_.size() " << nodes_.size() << std::endl;
             // std::cout << "curr_node_ptr->nearest_nodes_indices_.size() " 
                         // << curr_node_ptr->nearest_nodes_indices_.size() << std::endl;
             int curr_node_idx = nodes_.size()+1;
@@ -1212,8 +1262,8 @@ static void planner_rrt_connect(
     *plan = NULL;
     *planlength = 0;
     double epsilon = 0.1;
-    double sample_goal_bias = 0.3;
-    double goal_thresh_cartesian = 5;
+    double sample_goal_bias = 0.1;
+    double goal_thresh_cartesian = 3;
     int num_steps_interp = 20;
 
     Tree start_tree(armstart_anglesV_rad, 
@@ -1255,6 +1305,7 @@ static void planner_rrt_connect(
     bool path_found = false; 
     bool trees_connect = false; 
     int num_max_iters = 1e6;
+    int num_samples = 0;
 
     for (int iter=0; iter < num_max_iters; iter++)
     {
@@ -1262,17 +1313,18 @@ static void planner_rrt_connect(
         {
             break;
         }
-        if (is_start_tree)
-            std::cout << "Iter " << iter << ", Start Tree" << std::endl;
-        else
-            std::cout << "Iter " << iter << ", Goal Tree" << std::endl;
-        std::cout << "start_tree size " << start_tree.nodes_.size() 
-                  << ", goal_tree size " << goal_tree.nodes_.size() << std::endl; 
+        // if (is_start_tree)
+        //     std::cout << "Iter " << iter << ", Start Tree" << std::endl;
+        // else
+        //     std::cout << "Iter " << iter << ", Goal Tree" << std::endl;
+        // std::cout << "start_tree size " << start_tree.nodes_.size() 
+        //           << ", goal_tree size " << goal_tree.nodes_.size() << std::endl; 
 
         // Get random sample
         Config sample_config = current_tree_ptr->get_random_sample();
         if(!IsValidArmConfiguration(sample_config, numofDOFs, map, x_size, y_size))
             continue;
+        num_samples++;
         // try to insert in current tree
         sample_was_valid = current_tree_ptr->insert_node(sample_config);
         // std::cout << "sample_was_valid " << sample_was_valid << std::endl;
@@ -1304,10 +1356,10 @@ static void planner_rrt_connect(
             trees_connect = current_tree_ptr->extend_tree(sample_config);
             if ((start_tree.nodes_.size()>0) && (goal_tree.nodes_.size()>0))
             {
-                std::cout << "checking if connect " << std::endl;
+                // std::cout << "checking if connect " << std::endl;
                 if (trees_connect)
                 {
-                    std::cout << "trees connect !!!" << std::endl;
+                    // std::cout << "trees connect !!!" << std::endl;
                     path_found = true;
                     break;
                 }            
@@ -1323,11 +1375,11 @@ static void planner_rrt_connect(
         std::vector<Config> path_goal_tree = goal_tree.get_path(); 
         std::reverse(path_goal_tree.begin(), path_goal_tree.end());
 
-        std::cout << "path_start_tree.size() " << path_start_tree.size() << std::endl;
-        std::cout << "path_goal_tree.size() " << path_goal_tree.size() << std::endl;
+        // std::cout << "path_start_tree.size() " << path_start_tree.size() << std::endl;
+        // std::cout << "path_goal_tree.size() " << path_goal_tree.size() << std::endl;
         *planlength = (int)path_start_tree.size() + (int)path_goal_tree.size();
         *plan = (double**) malloc(*planlength*sizeof(double*));
-        std::cout << "*planlength " << *planlength << std::endl;
+        // std::cout << "*planlength " << *planlength << std::endl;
 
         // fill in the start tree's path in plan
         if (path_start_tree.size() > 0)
@@ -1353,6 +1405,7 @@ static void planner_rrt_connect(
             }
         }
     }
+    std::cout << "num_samples " << num_samples << std::endl;
     return;
 }
 
@@ -1371,16 +1424,16 @@ static void planner_prm(
     *planlength = 0;
     // double epsilon = 0.01; // looks sexier
     double epsilon = 0.4; // runs faster
-    double sample_goal_bias = 0.5;
-    double goal_thresh_cartesian = 5; // this is epsilon
-    int num_steps_interp = 10;
+    double sample_goal_bias = 0.0;
+    double goal_thresh_cartesian = 15; // this is epsilon
+    int num_steps_interp = 20;
     int tree_id = 0;
     //  user defined constant for RRT* radius
     // slide 36 @ http://www.cs.cmu.edu/~maxim/classes/robotplanning_grad/lectures/RRT_16782_fall17.pdf
     double gamma = 100;
     double epsilon_rrt_star = M_PI/4; 
     double radius; 
-    int num_max_iters = 100;
+    int num_max_iters = 10000;
 
     bool got_path=false;
 
@@ -1535,18 +1588,26 @@ void mexFunction( int nlhs, mxArray *plhs[],
     if (planner_id==RRT)
     {
         planner_rrt(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength);
+        double plan_quality = calc_plan_quality(&plan, &planlength, numofDOFs);
+        std::cout << "plan_quality " << plan_quality << std::endl;
     }
     if (planner_id==RRTCONNECT)
     {
         planner_rrt_connect(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength);
+        double plan_quality = calc_plan_quality(&plan, &planlength, numofDOFs);
+        std::cout << "plan_quality " << plan_quality << std::endl;
     }
     if (planner_id==RRTSTAR)
     {
         planner_rrt_star(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength);
+        double plan_quality = calc_plan_quality(&plan, &planlength, numofDOFs);
+        std::cout << "plan_quality " << plan_quality << std::endl;
     }
    if (planner_id==PRM)
     {
         planner_prm(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength);
+        double plan_quality = calc_plan_quality(&plan, &planlength, numofDOFs);
+        std::cout << "plan_quality " << plan_quality << std::endl;
     }
     
     //dummy planner which only computes interpolated path
