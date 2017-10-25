@@ -923,6 +923,273 @@ static void planner_rrt_star(
 //     return;
 // }
 
+
+class PRM_Node
+{
+public:
+    PRM_Node(){};
+    PRM_Node(Config config)
+    {
+        config_ = config;
+        is_conn_to_start_ = false;
+        is_conn_to_goal_ = false;
+        idx_ = -1;
+        numofDOFs_ = 5;
+    }
+
+    PRM_Node(Config config, 
+            bool is_conn_to_start, 
+            bool is_conn_to_goal)
+    {
+        config_ = config;
+        is_conn_to_start_ = is_conn_to_start;
+        is_conn_to_goal_ = is_conn_to_goal;
+        idx_ = -1;
+        numofDOFs_ = 5;
+    }
+
+    PRM_Node(Config config, 
+            bool is_conn_to_start, 
+            bool is_conn_to_goal,
+            int idx)
+    {
+        config_ = config;
+        is_conn_to_start_ = is_conn_to_start;
+        is_conn_to_goal_ = is_conn_to_goal;
+        idx_ = idx;
+        numofDOFs_ = 5;
+    }
+
+    double get_dist_to_config(Config config_2)
+    {
+        double total_dist = 0.0;
+        double curr_diff = 0.0;
+        double min_joint_angle = 0.0;
+        for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
+        {
+            curr_diff = config_[joint_idx] - config_2[joint_idx];
+            min_joint_angle = std::min(curr_diff, 2*M_PI - curr_diff);
+            total_dist += pow(std::fabs(min_joint_angle), 2);
+        }
+        return sqrt(total_dist);
+    }
+
+    ~PRM_Node(){};
+    
+    Config config_;
+    // std::vector<PRM_Node> neighbour_vec_;
+    std::vector<int> nearest_nodes_indices_;
+    std::vector<double> nearest_nodes_dist_;
+    bool is_conn_to_start_;
+    bool is_conn_to_goal_;
+    int idx_;
+    int numofDOFs_;
+    // int parent_idx_;
+    PRM_Node* parent_ptr_;
+};
+
+class PRMGraph
+{
+public:
+    PRMGraph(){};
+    PRMGraph(Config start_config,
+              Config goal_config,
+              int numofDOFs,
+              double epsilon,
+              double epsilon_rrt_star,
+              int num_steps_interp,
+              double sample_goal_bias,
+              int num_max_iters,
+              double gamma,
+              double* map,
+              int x_size,
+              int y_size)
+    {
+        PRM_Node start_node(start_config, true, false, 1);
+        PRM_Node goal_node(goal_config, false, true, -1);
+        start_node_ = start_node;
+        goal_node_ = goal_node;
+        nodes_.push_back(start_node_);
+        nodes_.push_back(goal_node_);
+        delta_ = get_volume_R5_hyperball();
+        gamma_ = gamma;
+        epsilon_ = epsilon;
+        map_ = map;
+        map_x_size_ = x_size;
+        map_y_size_ = y_size;
+        numofDOFs_ = numofDOFs;
+        num_steps_interp_ = num_steps_interp;
+        epsilon_rrt_star_ = epsilon_rrt_star;
+        num_samples_ = 0;
+        sample_goal_bias_ = sample_goal_bias;
+        start_config_ = start_config;
+        goal_config_ = goal_config;
+        num_max_iters_= num_max_iters;
+    }
+
+    ~PRMGraph(){};
+
+    double get_volume_R5_hyperball()
+    {
+        return pow(M_PI, 2.5)/3.32335;//http://www.wolframalpha.com/input/?i=gamma+function(3.5)
+    }
+
+    void update_rrt_star_radius()
+    {
+        if (nodes_.size() > 1)
+            radius_rrt_star_ = std::min(pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_), 
+                                epsilon_rrt_star_);
+        return;
+    }
+
+    Config get_random_sample()
+    {
+        if ((double) rand()/(double) RAND_MAX < sample_goal_bias_)
+        {
+            // std::cout << "sampling goal config" << std::endl;
+            return goal_config_;
+        }
+        else
+        {
+            Config sample_config = new double[numofDOFs_];
+
+            for(int i = 0; i < numofDOFs_; ++i) 
+            {
+                sample_config[i] = (double)rand()*(2*M_PI)/(double) RAND_MAX;
+            }
+            return sample_config;
+        }
+    }
+
+    void update_nearest_nodes_and_dist(PRM_Node* sample_node_ptr)
+    {
+        // sample_node_ptr->nearest_nodes_dist.clear();
+        // sample_node_ptr->nearest_nodes_indices.clear();
+        int closest_node_idx = 0;
+        double min_dist = std::numeric_limits<double>::infinity();
+        double curr_dist = 0.0;
+
+        for (int node_idx; node_idx < nodes_.size(); node_idx++)
+        {
+            curr_dist = nodes_[node_idx].get_dist_to_config(sample_node_ptr->config_);
+            if (curr_dist < min_dist)
+            {
+                closest_node_idx = node_idx;
+                min_dist = curr_dist;
+            }
+            if (curr_dist <= radius_rrt_star_)
+            {
+                sample_node_ptr->nearest_nodes_indices_.push_back(node_idx);
+                sample_node_ptr->nearest_nodes_dist_.push_back(curr_dist);
+            }
+        }
+        // closest_node_dist = min_dist;
+        return;
+    }
+
+    bool is_transition_valid(Config curr_config, Config sample_config)
+    {
+        Config intermediate_config = new double[numofDOFs_];
+        for (int idx_step; idx_step < num_steps_interp_; idx_step++)
+        {
+            for (int joint_idx=0; joint_idx < numofDOFs_; joint_idx++)
+            {
+                intermediate_config[joint_idx] = curr_config[joint_idx] +
+                            ((double)idx_step*(double)epsilon_*(sample_config[joint_idx] - curr_config[joint_idx])/(double)num_steps_interp_);
+            }
+
+            if (!IsValidArmConfiguration(intermediate_config, numofDOFs_, map_, map_x_size_, map_y_size_))
+            { return false; }
+        }
+        return true;
+    }
+
+    bool propagate_start_goal_connectivity(PRM_Node* curr_node_ptr) 
+    {
+        bool is_start_and_goal_conn = (curr_node_ptr->is_conn_to_start_
+                                    && curr_node_ptr->is_conn_to_goal_);
+        // allocated memory for curr_neighbour_ptr
+        Config placeholder_config = new double[numofDOFs_];
+        PRM_Node* curr_neighbour_ptr = new PRM_Node(placeholder_config, false, false, -1);
+        bool is_curr_neighbour_conn_to_start;
+        bool is_curr_neighbour_conn_to_goal;
+        for (int loop_idx = 0; loop_idx < curr_node_ptr->nearest_nodes_indices_.size(); loop_idx++) 
+        {
+            double curr_neighbour_idx = curr_node_ptr->nearest_nodes_indices_[loop_idx];
+            *curr_neighbour_ptr = nodes_[curr_neighbour_idx];
+            bool curr_neighbour_was_conn_to_start = curr_neighbour_ptr->is_conn_to_start_;
+            bool curr_neighbour_was_conn_to_goal = curr_neighbour_ptr->is_conn_to_goal_;
+            curr_neighbour_ptr->is_conn_to_start_ = (curr_neighbour_ptr->is_conn_to_start_ 
+                                                        || curr_node_ptr->is_conn_to_start_);
+
+            curr_neighbour_ptr->is_conn_to_goal_ = (curr_neighbour_ptr->is_conn_to_goal_ 
+                                                        || curr_node_ptr->is_conn_to_goal_);
+            
+            if (curr_neighbour_was_conn_to_start != curr_node_ptr->is_conn_to_start_ 
+                    || curr_neighbour_was_conn_to_goal != curr_node_ptr->is_conn_to_goal_) 
+            {
+                if( propagate_start_goal_connectivity(curr_neighbour_ptr) ) 
+                {
+                    is_start_and_goal_conn = true;
+                }
+            }
+        }
+        return is_start_and_goal_conn;
+    }
+
+    void build_graph()
+    {
+        for (int iter=0; iter < num_max_iters_; iter++)
+        {
+            Config sample_config = get_random_sample();
+            if(!IsValidArmConfiguration(sample_config, numofDOFs_, map_, map_x_size_, map_y_size_))
+                continue;
+            num_samples_++;
+            update_rrt_star_radius();
+            PRM_Node* curr_node_ptr = new PRM_Node(sample_config, false, false, -1);
+            update_nearest_nodes_and_dist(curr_node_ptr);
+            int curr_node_idx = nodes_.size()+1;
+            nodes_.push_back(*curr_node_ptr);
+
+            // PRM_Node* curr_neighbour;
+            for (int loop_idx=0; loop_idx < curr_node_ptr->nearest_nodes_indices_.size(); loop_idx++)
+            {
+                double curr_neighbour_idx = curr_node_ptr->nearest_nodes_indices_[loop_idx];
+                if ( !is_transition_valid(nodes_[curr_neighbour_idx].config_, sample_config) );
+                    { continue; }
+                // // add as neighbour of the curr neighbour!
+                nodes_[curr_neighbour_idx].nearest_nodes_indices_.push_back(curr_node_idx);
+                curr_node_ptr->nearest_nodes_indices_.push_back(curr_neighbour_idx);
+            }
+
+            if (propagate_start_goal_connectivity(curr_node_ptr))
+                { break; }
+        }
+        return;
+    }
+
+    std::vector<PRM_Node> nodes_;
+    PRM_Node start_node_;
+    PRM_Node goal_node_;
+    PRM_Node* start_node_ptr_;
+    PRM_Node* goal_node_ptr_;
+    Config start_config_;
+    Config goal_config_;
+    int numofDOFs_;
+    int num_steps_interp_;
+    double epsilon_;
+    double radius_rrt_star_;
+    double epsilon_rrt_star_;
+    double delta_;
+    double gamma_;
+    int map_x_size_;
+    int map_y_size_;
+    double* map_;
+    int num_samples_;
+    double sample_goal_bias_;
+    int num_max_iters_;
+};
+
 static void planner_rrt_connect(
     double* map,
     int x_size,
@@ -1080,265 +1347,6 @@ static void planner_rrt_connect(
     return;
 }
 
-class PRM_Node
-{
-public:
-    PRM_Node(){};
-    PRM_Node(Config config)
-    {
-        config_ = config;
-        is_conn_to_start_ = false;
-        is_conn_to_goal_ = false;
-        idx_ = -1;
-        numofDOFs_ = 5;
-    }
-
-    PRM_Node(Config config, 
-            bool is_conn_to_start, 
-            bool is_conn_to_goal)
-    {
-        config_ = config;
-        is_conn_to_start_ = is_conn_to_start;
-        is_conn_to_goal_ = is_conn_to_goal;
-        idx_ = -1;
-        numofDOFs_ = 5;
-    }
-
-    PRM_Node(Config config, 
-            bool is_conn_to_start, 
-            bool is_conn_to_goal,
-            int idx)
-    {
-        config_ = config;
-        is_conn_to_start_ = is_conn_to_start;
-        is_conn_to_goal_ = is_conn_to_goal;
-        idx_ = idx;
-        numofDOFs_ = 5;
-    }
-
-    double get_dist_to_config(Config config_2)
-    {
-        double total_dist = 0.0;
-        double curr_diff = 0.0;
-        double min_joint_angle = 0.0;
-        for (int joint_idx=0; joint_idx<numofDOFs_; joint_idx++)
-        {
-            curr_diff = config_[joint_idx] - config_2[joint_idx];
-            min_joint_angle = std::min(curr_diff, 2*M_PI - curr_diff);
-            total_dist += pow(std::fabs(min_joint_angle), 2);
-        }
-        return sqrt(total_dist);
-    }
-
-    ~PRM_Node(){};
-    
-    Config config_;
-    // std::vector<PRM_Node> neighbour_vec_;
-    std::vector<int> nearest_nodes_indices_;
-    std::vector<double> nearest_nodes_dist_;
-    bool is_conn_to_start_;
-    bool is_conn_to_goal_;
-    int idx_;
-    int numofDOFs_;
-    // int parent_idx_;
-    PRM_Node* parent_ptr_;
-};
-
-class PRMGraph
-{
-public:
-    PRMGraph(){};
-    PRMGraph(Config start_config,
-              Config goal_config,
-              int numofDOFs,
-              double epsilon,
-              double epsilon_rrt_star,
-              int num_steps_interp,
-              double sample_goal_bias,
-              int num_max_iters,
-              double gamma,
-              double* map,
-              int x_size,
-              int y_size)
-    {
-        PRM_Node start_node_(start_config, true, false, 1);
-        PRM_Node goal_node_(goal_config, false, true, -1);
-        nodes_.push_back(start_node_);
-        nodes_.push_back(goal_node_);
-        delta_ = get_volume_R5_hyperball();
-        gamma_ = gamma;
-        epsilon_ = epsilon;
-        map_ = map;
-        map_x_size_ = x_size;
-        map_y_size_ = y_size;
-        numofDOFs_ = numofDOFs;
-        num_steps_interp_ = num_steps_interp;
-        epsilon_rrt_star_ = epsilon_rrt_star;
-        num_samples_ = 0;
-        sample_goal_bias_ = sample_goal_bias;
-        start_config_ = start_config;
-        goal_config_ = goal_config;
-        num_max_iters_= num_max_iters;
-    }
-
-    ~PRMGraph(){};
-
-    double get_volume_R5_hyperball()
-    {
-        return pow(M_PI, 2.5)/3.32335;//http://www.wolframalpha.com/input/?i=gamma+function(3.5)
-    }
-
-    void update_rrt_star_radius()
-    {
-        if (nodes_.size() > 1)
-            radius_rrt_star_ = std::min(pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_), 
-                                epsilon_rrt_star_);
-        return;
-    }
-
-    Config get_random_sample()
-    {
-        if ((double) rand()/(double) RAND_MAX < sample_goal_bias_)
-        {
-            // std::cout << "sampling goal config" << std::endl;
-            return goal_config_;
-        }
-        else
-        {
-            Config sample_config = new double[numofDOFs_];
-
-            for(int i = 0; i < numofDOFs_; ++i) 
-            {
-                sample_config[i] = (double)rand()*(2*M_PI)/(double) RAND_MAX;
-            }
-            return sample_config;
-        }
-    }
-
-    void update_nearest_nodes_and_dist(PRM_Node* sample_node_ptr)
-    {
-        // sample_node_ptr->nearest_nodes_dist.clear();
-        // sample_node_ptr->nearest_nodes_indices.clear();
-        int closest_node_idx = 0;
-        double min_dist = std::numeric_limits<double>::infinity();
-        double curr_dist = 0.0;
-
-        for (int node_idx; node_idx < nodes_.size(); node_idx++)
-        {
-            curr_dist = nodes_[node_idx].get_dist_to_config(sample_node_ptr->config_);
-            if (curr_dist < min_dist)
-            {
-                closest_node_idx = node_idx;
-                min_dist = curr_dist;
-            }
-            if (curr_dist <= radius_rrt_star_)
-            {
-                sample_node_ptr->nearest_nodes_indices_.push_back(node_idx);
-                sample_node_ptr->nearest_nodes_dist_.push_back(curr_dist);
-            }
-        }
-        // closest_node_dist = min_dist;
-        return;
-    }
-
-    bool is_transition_valid(Config curr_config, Config sample_config)
-    {
-        Config intermediate_config = new double[numofDOFs_];
-        for (int idx_step; idx_step < num_steps_interp_; idx_step++)
-        {
-            for (int joint_idx=0; joint_idx < numofDOFs_; joint_idx++)
-            {
-                intermediate_config[joint_idx] = curr_config[joint_idx] +
-                            ((double)idx_step*(double)epsilon_*(sample_config[joint_idx] - curr_config[joint_idx])/(double)num_steps_interp_);
-            }
-
-            if (!IsValidArmConfiguration(intermediate_config, numofDOFs_, map_, map_x_size_, map_y_size_))
-            { return false; }
-        }
-        return true;
-    }
-
-    bool propagate_start_goal_connectivity(PRM_Node* curr_node_ptr) 
-    {
-        bool is_start_and_goal_conn = (curr_node_ptr->is_conn_to_start_
-                                    && curr_node_ptr->is_conn_to_goal_);
-        PRM_Node* curr_neighbour_ptr;
-        bool is_curr_neighbour_conn_to_start;
-        bool is_curr_neighbour_conn_to_goal;
-        for (int loop_idx = 0; loop_idx < curr_node_ptr->nearest_nodes_indices_.size(); loop_idx++) 
-        {
-            double curr_neighbour_idx = curr_node_ptr->nearest_nodes_indices_[loop_idx];
-            *curr_neighbour_ptr = nodes_[curr_neighbour_idx];
-            bool curr_neighbour_was_conn_to_start = curr_neighbour_ptr->is_conn_to_start_;
-            bool curr_neighbour_was_conn_to_goal = curr_neighbour_ptr->is_conn_to_goal_;
-            curr_neighbour_ptr->is_conn_to_start_ = (curr_neighbour_ptr->is_conn_to_start_ 
-                                                        || curr_node_ptr->is_conn_to_start_);
-
-            curr_neighbour_ptr->is_conn_to_goal_ = (curr_neighbour_ptr->is_conn_to_goal_ 
-                                                        || curr_node_ptr->is_conn_to_goal_);
-            
-            if (curr_neighbour_was_conn_to_start != curr_node_ptr->is_conn_to_start_ 
-                    || curr_neighbour_was_conn_to_goal != curr_node_ptr->is_conn_to_goal_) 
-            {
-                if( propagate_start_goal_connectivity(curr_neighbour_ptr) ) 
-                {
-                    is_start_and_goal_conn = true;
-                }
-            }
-        }
-        return is_start_and_goal_conn;
-    }
-
-    void build_graph()
-    {
-        for (int iter=0; iter < num_max_iters_; iter++)
-        {
-            Config sample_config = get_random_sample();
-            if(!IsValidArmConfiguration(sample_config, numofDOFs_, map_, map_x_size_, map_y_size_))
-                continue;
-            num_samples_++;
-            update_rrt_star_radius();
-            PRM_Node* curr_node_ptr = new PRM_Node(sample_config, false, false, -1);
-            update_nearest_nodes_and_dist(curr_node_ptr);
-            int curr_node_idx = nodes_.size()+1;
-            nodes_.push_back(*curr_node_ptr);
-
-            PRM_Node* curr_neighbour;
-            for (int loop_idx=0; loop_idx < curr_node_ptr->nearest_nodes_indices_.size(); loop_idx++)
-            {
-                double curr_neighbour_idx = curr_node_ptr->nearest_nodes_indices_[loop_idx];
-                if ( !is_transition_valid(nodes_[curr_neighbour_idx].config_, sample_config) );
-                    { continue; }
-                // add as neighbour of the curr neighbour!
-                nodes_[curr_neighbour_idx].nearest_nodes_indices_.push_back(curr_node_idx);
-                curr_node_ptr->nearest_nodes_indices_.push_back(curr_neighbour_idx);
-            }
-
-            if (propagate_start_goal_connectivity(curr_node_ptr))
-                { break; }
-        }
-        return;
-    }
-
-    std::vector<PRM_Node> nodes_;
-    PRM_Node start_node_;
-    PRM_Node goal_node_;
-    Config start_config_;
-    Config goal_config_;
-    int numofDOFs_;
-    int num_steps_interp_;
-    double epsilon_;
-    double radius_rrt_star_;
-    double epsilon_rrt_star_;
-    double delta_;
-    double gamma_;
-    int map_x_size_;
-    int map_y_size_;
-    double* map_;
-    int num_samples_;
-    double sample_goal_bias_;
-    int num_max_iters_;
-};
 
 static void planner_prm(
     double* map,
@@ -1363,66 +1371,94 @@ static void planner_prm(
     double gamma = 100;
     double epsilon_rrt_star = M_PI/4; 
     double radius; 
-    int num_max_iters = 100;
+    int num_max_iters = 100000;
 
     bool got_path=false;
-    PRMGraph prm_graph_obj;
-    prm_graph_obj.PRMGraph(Config armstart_anglesV_rad,
-                        Config armgoal_anglesV_rad,
-                        int numofDOFs,
-                        double epsilon,
-                        double epsilon_rrt_star,
-                        int num_steps_interp,
-                        double sample_goal_bias,
-                        int num_max_iters,
-                        double gamma,
-                        double* map,
-                        int x_size,
-                        int y_size);
 
-    std::cout << prm_graph_obj.gamma_ << std::endl;
-    // prm_graph_obj.build_graph();
+    // PRMGraph prm_graph_obj(Config armstart_anglesV_rad,
+    //                     Config armgoal_anglesV_rad,
+    //                     int numofDOFs,
+    //                     double epsilon,
+    //                     double epsilon_rrt_star,
+    //                     int num_steps_interp,
+    //                     double sample_goal_bias,
+    //                     int num_max_iters,
+    //                     double gamma,
+    //                     double* map,
+    //                     int x_size,
+    //                     int y_size);
 
-    // std::queue<PRM_Node*> prm_queue;
-    // prm_queue.push(prm_graph.start_node_);
+    // manual constructor coz of weird bug
+    PRMGraph prm_graph;
+    prm_graph.gamma_ = gamma;
+    Config start_config = armstart_anglesV_rad;
+    Config goal_config = armstart_anglesV_rad;
+    PRM_Node start_node(start_config, true, false, 1);
+    PRM_Node goal_node(goal_config, false, true, -1);
+    prm_graph.start_node_ = start_node;
+    prm_graph.goal_node_ = goal_node;
+    prm_graph.nodes_.push_back(prm_graph.start_node_);
+    prm_graph.nodes_.push_back(prm_graph.goal_node_);
+    prm_graph.delta_ = prm_graph.get_volume_R5_hyperball();
+    prm_graph.gamma_ = gamma;
+    prm_graph.epsilon_ = epsilon;
+    prm_graph.map_ = map;
+    prm_graph.map_x_size_ = x_size;
+    prm_graph.map_y_size_ = y_size;
+    prm_graph.numofDOFs_ = numofDOFs;
+    prm_graph.num_steps_interp_ = num_steps_interp;
+    prm_graph.epsilon_rrt_star_ = epsilon_rrt_star;
+    prm_graph.num_samples_ = 0;
+    prm_graph.sample_goal_bias_ = sample_goal_bias;
+    prm_graph.start_config_ = start_config;
+    prm_graph.goal_config_ = goal_config;
+    prm_graph.num_max_iters_= num_max_iters;
+    prm_graph.start_node_ptr_ = &prm_graph.start_node_; 
+    prm_graph.goal_node_ptr_ = &prm_graph.goal_node_; 
+
+    prm_graph.build_graph();
+    std::cout << "prm_graph.nodes_.size()" << prm_graph.nodes_.size() << "\n";
+
+    std::queue<PRM_Node*> prm_queue;
+    prm_queue.push(prm_graph.start_node_ptr_);
             
-    // PRM_Node* curr_node_ptr;
-    // while(prm_queue.size() != 0) 
-    // {
-    //     curr_node_ptr = prm_queue.front();
-    //     prm_queue.pop();
-    //     if (*curr_node_ptr == prm_graph.goal_node_) 
-    //     {
-    //         std::cout << "SOLUTION FOUND!!!" << std::endl;
-    //         break;
-    //     }
-    //     PRM_Node* curr_neighbour_ptr;
-    //     for(int loop_idx = 0; loop_idx < curr_node_ptr->nearest_nodes_indices_.size(); loop_idx++)
-    //     {
-    //         double curr_neighbour_idx = curr_node_ptr->nearest_nodes_indices_[loop_idx];
-    //         *curr_neighbour_ptr = nodes_[curr_neighbour_idx];
-    //         if (curr_neighbour_ptr->idx == -1) 
-    //         {
-    //             curr_neighbour_ptr->parent_ptr_ = curr_node_ptr;
-    //             curr_neighbour_ptr->idx = curr_node_ptr->idx + 1;
-    //             prm_queue.push(curr_neighbour_ptr);
-    //         }
-    //     }
-    // }
+    PRM_Node* curr_node_ptr;
+    while(prm_queue.size() != 0) 
+    {
+        curr_node_ptr = prm_queue.front();
+        prm_queue.pop();
+        if (curr_node_ptr == prm_graph.goal_node_ptr_) 
+        {
+            std::cout << "SOLUTION FOUND!!!" << std::endl;
+            break;
+        }
+        PRM_Node* curr_neighbour_ptr;
+        for(int loop_idx = 0; loop_idx < curr_node_ptr->nearest_nodes_indices_.size(); loop_idx++)
+        {
+            double curr_neighbour_idx = curr_node_ptr->nearest_nodes_indices_[loop_idx];
+            *curr_neighbour_ptr = prm_graph.nodes_[curr_neighbour_idx];
+            if (curr_neighbour_ptr->idx_ == -1) 
+            {
+                curr_neighbour_ptr->parent_ptr_ = curr_node_ptr;
+                curr_neighbour_ptr->idx_ = curr_node_ptr->idx_ + 1;
+                prm_queue.push(curr_neighbour_ptr);
+            }
+        }
+    }
 
-    // *plan = (double**) malloc(curr_node_ptr->idx * sizeof(double*));
-    // *planlength = curr_node_ptr->idx;
+    *plan = (double**) malloc(curr_node_ptr->idx_ * sizeof(double*));
+    *planlength = curr_node_ptr->idx_;
 
-    // for (int i = *planlength - 1; i >= 0; i--)
-    // {
-    //     (*plan)[i] = (double*) malloc(numofDOFs * sizeof(double));
-    //     for(int j = 0; j < numofDOFs; j++)
-    //     {
-    //         (*plan)[i][j] = curr_node_ptr->config_[j];
-    //     }
-    //     curr_node_ptr = curr_node_ptr->parent_ptr_;
-    // }
-    
+    for (int i = *planlength - 1; i >= 0; i--)
+    {
+        (*plan)[i] = (double*) malloc(numofDOFs * sizeof(double));
+        for(int j = 0; j < numofDOFs; j++)
+        {
+            (*plan)[i][j] = curr_node_ptr->config_[j];
+        }
+        curr_node_ptr = curr_node_ptr->parent_ptr_;
+    }
+    return;    
 
 }
 //prhs contains input parameters (3): 
@@ -1494,6 +1530,10 @@ void mexFunction( int nlhs, mxArray *plhs[],
     if (planner_id==RRTSTAR)
     {
         planner_rrt_star(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength);
+    }
+   if (planner_id==PRM)
+    {
+        planner_prm(map,x_size,y_size, armstart_anglesV_rad, armgoal_anglesV_rad, numofDOFs, &plan, &planlength);
     }
     
     //dummy planner which only computes interpolated path
