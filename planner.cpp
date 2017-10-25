@@ -352,7 +352,7 @@ public:
                 // std::cout << "min_dist " << min_dist << ", idx_min " << idx_min << std::endl;
             }
         }
-        std::cout << std::endl;
+        // std::cout << std::endl;
         return idx_min;
     }
 
@@ -367,12 +367,9 @@ public:
     {
         // double first_term = pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_);
         if (nodes_.size() > 1)
-            // radius_rrt_star_ = std::min( pow(1000 * log(nodes_.size())/nodes_.size(), (1.0/(double)numofDOFs_)),
-            //                             epsilon_rrt_star_);
-
-            // radius_rrt_star_ = std::min(pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_), 
-                                // epsilon_rrt_star_);
-            radius_rrt_star_ = 5;
+            radius_rrt_star_ = std::min(pow( gamma_ / delta_ * log(nodes_.size()) / nodes_.size() , 1.0/(double)numofDOFs_), 
+                                epsilon_rrt_star_);
+            // radius_rrt_star_ = 5;
         return;
     }
 
@@ -380,6 +377,8 @@ public:
     // TODO to make radius a param a tree, or not?
     void update_nearest_nodes_and_dist(Config sample_config)
     {
+        nearest_nodes_dist_.clear();
+        nearest_nodes_indices_.clear();
         closest_node_idx_ = 0;
         double min_dist = std::numeric_limits<double>::infinity();
         double curr_dist = 0.0;
@@ -391,7 +390,7 @@ public:
             {
                 closest_node_idx_ = node_idx;
                 min_dist = curr_dist;
-                std::cout << "min_dist " << min_dist  << "\n";
+                // std::cout << "min_dist " << min_dist  << "\n";
             }
             if (curr_dist <= radius_rrt_star_)
             {
@@ -427,6 +426,7 @@ public:
 
     bool extend_tree_rrt_star(Config sample_config)
     {
+        std::cout << std::endl; 
         if (nodes_.size()==0)
         {
             Node start_node(start_config_, -1);
@@ -453,13 +453,16 @@ public:
             if (!IsValidArmConfiguration(intermediate_config, numofDOFs_, map_, map_x_size_, map_y_size_))
             { return false; }                       
         }
-        
+
         sample_config = intermediate_config;
+        // idx_nearest = get_nearest_index(sample_config);
         update_rrt_star_radius();
         update_nearest_nodes_and_dist(sample_config);
-        std::cout << "num_nodes " << nodes_.size() << std::endl; 
-        std::cout << "radius_rrt_star_ " << radius_rrt_star_ << std::endl; 
-        std::cout << "closest_node_idx_ " << closest_node_idx_ << std::endl; 
+        // closest_node_idx_ = idx_nearest;
+        // std::cout << "num_nodes " << nodes_.size() << std::endl; 
+        // std::cout << "radius_rrt_star_ " << radius_rrt_star_ << std::endl; 
+        // std::cout << "closest_node_idx_ " << closest_node_idx_ << std::endl; 
+        // std::cout << "idx_nearest " << closest_node_idx_ << std::endl; 
 
         // if(closest_node_dist_ > epsilon_rrt_star_)
         // {
@@ -841,17 +844,17 @@ static void planner_rrt_star(
     *plan = NULL;
     *planlength = 0;
     // double epsilon = 0.01; // looks sexier
-    double epsilon = 0.1; // runs faster
-    double sample_goal_bias = 0.3;
+    double epsilon = 0.4; // runs faster
+    double sample_goal_bias = 0.5;
     double goal_thresh_cartesian = 5; // this is epsilon
-    int num_steps_interp = 20;
+    int num_steps_interp = 10;
     int tree_id = 0;
     //  user defined constant for RRT* radius
     // slide 36 @ http://www.cs.cmu.edu/~maxim/classes/robotplanning_grad/lectures/RRT_16782_fall17.pdf
-    double gamma = 1000;
+    double gamma = 100;
     double epsilon_rrt_star = M_PI/4; 
     double radius; 
-    int num_max_iters = 10000;
+    int num_max_iters = 1e6;
 
     Tree tree(armstart_anglesV_rad, 
             armgoal_anglesV_rad, 
@@ -871,7 +874,7 @@ static void planner_rrt_star(
 
     for (int iter=0; iter < num_max_iters; iter++)
     {
-        std::cout << "iter " << iter << std::endl;
+        // std::cout << "iter " << iter << std::endl;
         if (tree.is_goal_reached_)
         {
             std::cout << " FOUND SOLUTION " << std::endl;
