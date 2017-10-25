@@ -1140,12 +1140,15 @@ public:
     bool is_conn_to_goal_;
     int idx_;
     int numofDOFs_;
+    // int parent_idx_;
+    PRM_Node* parent_ptr_;
 };
 
-class PRM_graph
+class PRMGraph
 {
 public:
-    PRM_graph(Config start_config,
+    PRMGraph(){};
+    PRMGraph(Config start_config,
               Config goal_config,
               int numofDOFs,
               double epsilon,
@@ -1178,7 +1181,7 @@ public:
         num_max_iters_= num_max_iters;
     }
 
-    ~PRM_graph(){};
+    ~PRMGraph(){};
 
     double get_volume_R5_hyperball()
     {
@@ -1314,6 +1317,7 @@ public:
             if (propagate_start_goal_connectivity(curr_node_ptr))
                 { break; }
         }
+        return;
     }
 
     std::vector<PRM_Node> nodes_;
@@ -1336,6 +1340,91 @@ public:
     int num_max_iters_;
 };
 
+static void planner_prm(
+    double* map,
+    int x_size,
+    int y_size,
+    double* armstart_anglesV_rad,
+    double* armgoal_anglesV_rad,
+    int numofDOFs,
+    double*** plan,
+    int* planlength)
+{
+    *plan = NULL;
+    *planlength = 0;
+    // double epsilon = 0.01; // looks sexier
+    double epsilon = 0.4; // runs faster
+    double sample_goal_bias = 0.5;
+    double goal_thresh_cartesian = 5; // this is epsilon
+    int num_steps_interp = 10;
+    int tree_id = 0;
+    //  user defined constant for RRT* radius
+    // slide 36 @ http://www.cs.cmu.edu/~maxim/classes/robotplanning_grad/lectures/RRT_16782_fall17.pdf
+    double gamma = 100;
+    double epsilon_rrt_star = M_PI/4; 
+    double radius; 
+    int num_max_iters = 100;
+
+    bool got_path=false;
+    PRMGraph prm_graph_obj;
+    prm_graph_obj.PRMGraph(Config armstart_anglesV_rad,
+                        Config armgoal_anglesV_rad,
+                        int numofDOFs,
+                        double epsilon,
+                        double epsilon_rrt_star,
+                        int num_steps_interp,
+                        double sample_goal_bias,
+                        int num_max_iters,
+                        double gamma,
+                        double* map,
+                        int x_size,
+                        int y_size);
+
+    std::cout << prm_graph_obj.gamma_ << std::endl;
+    // prm_graph_obj.build_graph();
+
+    // std::queue<PRM_Node*> prm_queue;
+    // prm_queue.push(prm_graph.start_node_);
+            
+    // PRM_Node* curr_node_ptr;
+    // while(prm_queue.size() != 0) 
+    // {
+    //     curr_node_ptr = prm_queue.front();
+    //     prm_queue.pop();
+    //     if (*curr_node_ptr == prm_graph.goal_node_) 
+    //     {
+    //         std::cout << "SOLUTION FOUND!!!" << std::endl;
+    //         break;
+    //     }
+    //     PRM_Node* curr_neighbour_ptr;
+    //     for(int loop_idx = 0; loop_idx < curr_node_ptr->nearest_nodes_indices_.size(); loop_idx++)
+    //     {
+    //         double curr_neighbour_idx = curr_node_ptr->nearest_nodes_indices_[loop_idx];
+    //         *curr_neighbour_ptr = nodes_[curr_neighbour_idx];
+    //         if (curr_neighbour_ptr->idx == -1) 
+    //         {
+    //             curr_neighbour_ptr->parent_ptr_ = curr_node_ptr;
+    //             curr_neighbour_ptr->idx = curr_node_ptr->idx + 1;
+    //             prm_queue.push(curr_neighbour_ptr);
+    //         }
+    //     }
+    // }
+
+    // *plan = (double**) malloc(curr_node_ptr->idx * sizeof(double*));
+    // *planlength = curr_node_ptr->idx;
+
+    // for (int i = *planlength - 1; i >= 0; i--)
+    // {
+    //     (*plan)[i] = (double*) malloc(numofDOFs * sizeof(double));
+    //     for(int j = 0; j < numofDOFs; j++)
+    //     {
+    //         (*plan)[i][j] = curr_node_ptr->config_[j];
+    //     }
+    //     curr_node_ptr = curr_node_ptr->parent_ptr_;
+    // }
+    
+
+}
 //prhs contains input parameters (3): 
 //1st is matrix with all the obstacles
 //2nd is a row vector of start angles for the arm 
