@@ -1027,6 +1027,7 @@ public:
     // std::vector<PRM_Node> neighbour_vec_;
     std::vector<int> nearest_nodes_indices_;
     std::vector<double> nearest_nodes_dist_;
+    
     bool is_conn_to_start_;
     bool is_conn_to_goal_;
     int idx_;
@@ -1111,10 +1112,7 @@ public:
 
     void update_nearest_nodes_and_dist(PRM_Node* sample_node_ptr)
     {
-        // sample_node_ptr->nearest_nodes_dist.clear();
-        // sample_node_ptr->nearest_nodes_indices.clear();
         int closest_node_idx = 0;
-        double min_dist = std::numeric_limits<double>::infinity();
         double curr_dist = 0.0;
 
         // std::cout << "update_nearest_nodes_and_dist :: nodes_.size() "
@@ -1123,18 +1121,12 @@ public:
         {
             curr_dist = nodes_[node_idx].get_dist_to_config(sample_node_ptr->config_);
             // std::cout << "node_idx " << node_idx << "curr_dist " << curr_dist << std::endl;
-            if (curr_dist < min_dist)
-            {
-                closest_node_idx = node_idx;
-                min_dist = curr_dist;
-            }
             if (curr_dist <= radius_rrt_star_)
             {
                 sample_node_ptr->nearest_nodes_indices_.push_back(node_idx);
                 sample_node_ptr->nearest_nodes_dist_.push_back(curr_dist);
             }
         }
-        // closest_node_dist = min_dist;
         return;
     }
 
@@ -1193,8 +1185,8 @@ public:
 
     void build_graph()
     {
-        for (int iter=0; iter < num_max_iters_; iter++)
-        // while(true)
+        // for (int iter=0; iter < num_max_iters_; iter++)
+        while(true)
         {
             Config sample_config = get_random_sample();
             if(!IsValidArmConfiguration(sample_config, numofDOFs_, map_, map_x_size_, map_y_size_))
@@ -1204,7 +1196,10 @@ public:
             PRM_Node* curr_node_ptr = new PRM_Node(sample_config, false, false, -1);
             update_nearest_nodes_and_dist(curr_node_ptr);
             // std::cout << "radius_rrt_star_ " << radius_rrt_star_ << std::endl;
-            // std::cout << "nodes_.size() " << nodes_.size() << std::endl;
+            if (nodes_.size()%500 ==0)
+            {
+                std::cout << "nodes_.size() " << nodes_.size() << std::endl;
+            }
             // std::cout << "curr_node_ptr->nearest_nodes_indices_.size() " 
                         // << curr_node_ptr->nearest_nodes_indices_.size() << std::endl;
             int curr_node_idx = nodes_.size()+1;
@@ -1433,22 +1428,9 @@ static void planner_prm(
     double gamma = 100;
     double epsilon_rrt_star = M_PI/4; 
     double radius; 
-    int num_max_iters = 10000;
+    int num_max_iters = 1000;
 
     bool got_path=false;
-
-    // PRMGraph prm_graph_obj(Config armstart_anglesV_rad,
-    //                     Config armgoal_anglesV_rad,
-    //                     int numofDOFs,
-    //                     double epsilon,
-    //                     double epsilon_rrt_star,
-    //                     int num_steps_interp,
-    //                     double sample_goal_bias,
-    //                     int num_max_iters,
-    //                     double gamma,
-    //                     double* map,
-    //                     int x_size,
-    //                     int y_size);
 
     // manual constructor coz of weird bug
     PRMGraph prm_graph;
